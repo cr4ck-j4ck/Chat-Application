@@ -17,8 +17,13 @@
   },
   "homepage": "https://github.com/cr4ck-j4ck/Chat-Application#readme",
   "dependencies": {
-    "cors": "^2.8.5",
+    "dotenv": "^17.2.1",
     "ejs": "^3.1.10",
+    "ejs-mate": "^4.0.0",
     "express": "^5.1.0"
+  },
+  "devDependencies": {
+    "@types/cors": "^2.8.19",
+    "@types/express": "^5.0.3"
   }
 }
