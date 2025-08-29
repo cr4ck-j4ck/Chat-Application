@@ -71,7 +71,6 @@ export async function loginUser(req: Request, res: Response) {
   });
   res.send("User Loggined Successfully!!");
 }
-
 export async function sendUser(req: Request, res: Response) {}
 
 export async function verifyUser(req: Request, res: Response) {
@@ -85,11 +84,9 @@ export async function verifyUser(req: Request, res: Response) {
       res.status(503).send("Error Occurred!! While verifying your Code");
     }
     req.user = {userId : isVerified.userId};
-
-    res.send("verifying..");
+    return res.send("verifying..");
   } catch (err) {
     console.log("kya kar rha hai be error aa gayi catch karliya..",err);
     return res.status(500).send("Lode lag gaye");
   }
-  res.send("Ha kuch toh hua hai lagta");
 }

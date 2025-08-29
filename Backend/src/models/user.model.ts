@@ -19,6 +19,7 @@ export interface IUser extends Document {
   friends: mongoose.Types.ObjectId[]; // References to other users
   blockedUsers: mongoose.Types.ObjectId[];
   socketId?: string;
+  chats:string[]|null;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -84,7 +85,12 @@ const UserSchema = new Schema<IUser>(
         ref: 'User',
       },
     ],
-
+    chats:[
+      {
+        type:Schema.Types.ObjectId,
+        ref:'Chat'
+      }
+    ],
     socketId: {
       type: String,
       default: '',
