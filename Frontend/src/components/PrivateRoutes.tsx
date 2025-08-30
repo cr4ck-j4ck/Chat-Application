@@ -23,9 +23,6 @@ const PrivateRoutes = ({
             setFetchResult("error");
             return console.log(err);
         }
-        console.log("res aya verification ka ", result);
-        console.log("mein call hua hu")
-        console.log("dekh get user",user)
         setUser(user!);
       })
       .catch((err) => {

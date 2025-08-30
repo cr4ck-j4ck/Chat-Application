@@ -305,6 +305,7 @@ export default function ChatPage() {
                 </div>
               )}
 
+
               {/* Regular Chats */}
               <div className="mb-4">
                 <div className="px-2 py-1 text-xs font-semibold text-muted-foreground uppercase tracking-wide flex items-center">

@@ -6,7 +6,7 @@ import jwt from "jsonwebtoken";
 export async function createUser(req: Request, res: Response) {
   console.log("Requestt recieved", req.body);
   if (req.body && req.body.userData.email) {
-    const { email, password, firstName, lastName } = req.body.userData;
+    const { email, password, firstName, lastName, userName } = req.body.userData;
     const existingUser = await User.findOne({ email: email });
     if (existingUser) {
       return res.status(400).send("User Already Exists!!.. You have to login");
@@ -18,6 +18,7 @@ export async function createUser(req: Request, res: Response) {
         password: hashedPassword,
         firstName,
         lastName,
+        userName
       })
     ).toObject();
     const { password: pwd, ...filteredUser } = newUser;
@@ -55,7 +56,7 @@ export async function loginUser(req: Request, res: Response) {
     return res.status(401).send("Wrong password!");
   }
   const token = jwt.sign(
-    { userId: existingUser._id },
+    { userId: existingUser._id ,userName:existingUser.userName},
     process.env.JWT_SECRET!,
     { expiresIn: "6d" }
   );
@@ -79,14 +80,29 @@ export async function verifyUser(req: Request, res: Response) {
     if (!token) {
       return res.status(401).send("Please Login");
     }
-    const isVerified = jwt.verify(token, process.env.JWT_SECRET!) as {userId : string};
-    if(!isVerified){
+    const isVerified = jwt.verify(token, process.env.JWT_SECRET!) as {
+      userId: string;
+    };
+    if (!isVerified) {
       res.status(503).send("Error Occurred!! While verifying your Code");
     }
-    req.user = {userId : isVerified.userId};
+    req.user = { userId: isVerified.userId };
     return res.send("verifying..");
   } catch (err) {
-    console.log("kya kar rha hai be error aa gayi catch karliya..",err);
+    console.log("kya kar rha hai be error aa gayi catch karliya..", err);
     return res.status(500).send("Lode lag gaye");
   }
+}
+
+export async function checkUniqueUsername(req: Request, res: Response) {
+  const { userName } = req.query;
+  if(!userName){
+    return res.status(400).send("UserName required!!");
+  }
+  const existingUserWithUsername = await User.findOne({userName});
+  console.log("UserName dekh existingUser se",existingUserWithUsername);
+  if(!existingUserWithUsername){
+    return res.send(true)
+  }
+  res.send(false);
 }

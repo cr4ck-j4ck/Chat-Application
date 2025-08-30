@@ -21,6 +21,7 @@ export interface IUser extends Document {
   socketId?: string;
   chats:string[]|null;
   createdAt: Date;
+  userName:string;
   updatedAt: Date;
 }
 
@@ -35,6 +36,11 @@ const UserSchema = new Schema<IUser>(
     lastName: {
       type: String,
       trim: true,
+    },
+    userName:{
+      type:String,
+      trim:true,
+      unique:true
     },
     email: {
       type: String,
