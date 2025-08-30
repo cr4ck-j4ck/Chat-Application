@@ -1,9 +1,10 @@
 import { create } from "zustand";
 
 export interface Iuser {
-  firstName: string | null;
-  lastName: string | null;
-  email: string | null;
+  userName:string
+  firstName: string;
+  lastName: string;
+  email: string;
 }
 
 interface IuserStore {

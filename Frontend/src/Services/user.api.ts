@@ -8,7 +8,6 @@ interface IuserData {
   password: string;
 }
 
-
 export async function createUser(userData: IuserData) {
   console.log("passed Content is ",userData)
   const res = await axios.post(
@@ -20,8 +19,7 @@ export async function createUser(userData: IuserData) {
   );
   return res.data;
 }
-
-export async function loginUser(userData:{email:string,password:string}){
+export async function loginUser(userData:{email:string,password:string}):Promise<Iuser>{
   const res = await axios.post(`${BackendURL}/user/login`,{userData},{withCredentials:true});
   return res.data;
 }
@@ -42,3 +40,8 @@ export const getUser = async ():Promise<IgetUser> => {
     }
   }
 };
+
+export const isUserNameAvalable = async(userName:string):Promise<boolean> => {
+  const res = await axios.get(`${BackendURL}/user/isUsername?userName=${userName}`);
+  return res.data;
+}
