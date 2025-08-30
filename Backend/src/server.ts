@@ -1,8 +1,9 @@
 import express from "express";
 import dotenv from "dotenv";
 import { connectDB } from "./DbConfig";
-import cookiesParser from "cookie-parser"
+import cookiesParser from "cookie-parser";
 import cors from "cors";
+import { Server } from "socket.io";
 dotenv.config();
 
 // Routes I2mport
@@ -30,6 +31,19 @@ app.use((err, req, res, next) => {
   console.error(err);
   res.status(500).json({ message: "Internal Server Error" });
 });
-app.listen(Port, () => {
+const server = app.listen(Port, () => {
   console.log(`Started listening on Port ${Port}`);
+});
+
+const io = new Server(server,{
+  cors:{
+    origin:'http://localhost:5173'
+  }
+});
+io.use((socket,next)=>{
+  console.log("socket data Auth ", socket)
+  next();
+})
+io.on("connection", (socket) => {
+  console.log("a user connected");
 });
