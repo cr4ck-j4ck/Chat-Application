@@ -1,13 +1,15 @@
 "use client"
 
 import type React from "react"
-
+import { toast } from "sonner"
 import { useState, useRef, useEffect } from "react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { Badge } from "@/components/ui/badge"
+import { Toaster } from "@/components/ui/sonner"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
+import useGlobalStore from "@/Store/global.store"
 import { Textarea } from "@/components/ui/textarea"
 import {
   Search,
@@ -130,18 +132,18 @@ export default function ChatPage() {
   const [newMessage, setNewMessage] = useState("")
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; chatId: string } | null>(null)
   const [isAddFriendOpen, setIsAddFriendOpen] = useState(false)
-  const [friendEmail, setFriendEmail] = useState("")
+  const [friendUsername, setFriendUsername] = useState("")
   const [chats, setChats] = useState(mockChats)
   const [messages, setMessages] = useState(mockMessages)
   const [isLoading, setIsLoading] = useState(true)
   const contextMenuRef = useRef<HTMLDivElement>(null)
-
+  const socket = useGlobalStore(state => state.socket)
   // Simulate loading animation
   useEffect(() => {
     const timer = setTimeout(() => setIsLoading(false), 1000)
     return () => clearTimeout(timer)
   }, [])
-
+  
   // Close context menu when clicking outside
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -149,10 +151,11 @@ export default function ChatPage() {
         setContextMenu(null)
       }
     }
-
+    
     document.addEventListener("mousedown", handleClickOutside)
     return () => document.removeEventListener("mousedown", handleClickOutside)
   }, [])
+  
 
   const filteredChats = chats.filter((chat) => chat.name.toLowerCase().includes(searchQuery.toLowerCase()))
 
@@ -201,10 +204,12 @@ export default function ChatPage() {
   }
 
   const handleAddFriend = () => {
-    if (friendEmail.trim()) {
+    if (friendUsername.trim() && socket) {
       // Simulate sending friend request
-      console.log("Sending friend request to:", friendEmail)
-      setFriendEmail("")
+      socket.emit("sendRequest",friendUsername)
+      toast(`Sent Request to ${friendUsername}`)
+      console.log("Sending friend request to:", friendUsername)
+      setFriendUsername("")
       setIsAddFriendOpen(false)
     }
   }
@@ -212,6 +217,7 @@ export default function ChatPage() {
   return (
     <div className="flex h-screen bg-background">
       {/* Sidebar */}
+      <Toaster></Toaster>
       <div className="w-80 bg-sidebar border-r border-sidebar-border flex flex-col animate-slide-in-left">
         {/* Header */}
         <div className="p-4 border-b border-sidebar-border">
@@ -250,9 +256,9 @@ export default function ChatPage() {
                 </DialogHeader>
                 <div className="space-y-4">
                   <Input
-                    placeholder="Enter friend's email"
-                    value={friendEmail}
-                    onChange={(e) => setFriendEmail(e.target.value)}
+                    placeholder="Enter friend's UserName"
+                    value={friendUsername}
+                    onChange={(e) => setFriendUsername(e.target.value)}
                     className="bg-input"
                   />
                   <Button onClick={handleAddFriend} className="w-full bg-primary hover:bg-primary/90">
