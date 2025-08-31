@@ -1,5 +1,5 @@
-import { useState } from "react";
-import { Link } from "react-router-dom";
+import { useEffect, useState } from "react";
+import { Link, useNavigate } from "react-router-dom";
 import { ArrowLeft } from "lucide-react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
@@ -15,6 +15,7 @@ import LoginForm from "@/components/Auth/LoginForm";
 import SignupForm from "@/components/Auth/SignupForm";
 import SocialLoginButtons from "@/components/Auth/SocialLoginButton";
 import useUserStore from "@/Store/user.store";
+import { useShallow } from "zustand/react/shallow";
 import type {
   LoginFormData,
   SignupFormData,
@@ -31,14 +32,19 @@ const customMesssages = [
 
 export default function AuthPage() {
   const [showSuccessMessage, setShowSuccessMessage] = useState(false);
-  const setUser = useUserStore((state) => state.setUser);
-
+  const {setUser ,user}= useUserStore(useShallow((state) => ({setUser : state.setUser,user:state.user})));
+  const navigate = useNavigate();
+  useEffect(()=>{
+    if(user){
+      navigate("/dashboard");
+    }
+  },[]);
   const handleLogin = async (data: LoginFormData) => {
     const response = await loginUser(data);
     if (response) {
       setUser(response);
+      navigate("/dashboard");
     }
-    // Login logic here
   };
 
   const handleSignup = async (userData: SignupFormData) => {
