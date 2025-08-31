@@ -1,9 +1,13 @@
 import express from "express";
+import * as cookie from "cookie";
 import dotenv from "dotenv";
 import { connectDB } from "./DbConfig";
 import cookiesParser from "cookie-parser";
 import cors from "cors";
+import jwt from "jsonwebtoken";
 import { Server } from "socket.io";
+import { Request, Response, NextFunction } from "express";
+import { SocketData } from "./Types/socket";
 dotenv.config();
 
 // Routes I2mport
@@ -27,7 +31,8 @@ app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(cookiesParser());
 app.use("/user", UserRouter);
-app.use((err, req, res, next) => {
+
+app.use((err: unknown, req: Request, res: Response, next: NextFunction) => {
   console.error(err);
   res.status(500).json({ message: "Internal Server Error" });
 });
@@ -35,15 +40,40 @@ const server = app.listen(Port, () => {
   console.log(`Started listening on Port ${Port}`);
 });
 
-const io = new Server(server,{
-  cors:{
-    origin:'http://localhost:5173'
-  }
+const io = new Server<any, any, any, SocketData>(server, {
+  cors: {
+    origin: "http://localhost:5173",
+    credentials: true,
+  },
 });
-io.use((socket,next)=>{
-  console.log("socket data Auth ", socket)
+io.use((socket, next) => {
+  const token = socket.handshake.headers.cookie;
+  if (!token) {
+    return next(new Error("Token Required!!"));
+  }
+  const parsedCookie = cookie.parse(token) as {
+    token: string;
+    refreshToken: string;
+  };
+  const verified = jwt.verify(parsedCookie.token, process.env.JWT_SECRET!) as {
+    userName: string;
+    userId: string;
+  };
+
+  if (!verified) {
+    return next(new Error("You are not loggedin!!"));
+  }
+  socket.data.user = {
+    userId: verified.userId,
+    userName: verified.userName,
+  };
   next();
-})
+});
 io.on("connection", (socket) => {
-  console.log("a user connected");
+  socket.on("sendRequest", (userName: string) => {
+    socket.to(userName).emit("receivedRequest",socket.data.user.userName)
+    console.log("what we got from that :", userName);
+  });
+  socket.join(socket.data.user.userName);
+  console.log(`A user Connected with userName ${socket.data.user.userName}`);
 });
