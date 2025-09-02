@@ -36,14 +36,14 @@ export default function AuthPage() {
   const navigate = useNavigate();
   useEffect(()=>{
     if(user){
-      navigate("/dashboard");
+      navigate("/chat");
     }
   },[]);
   const handleLogin = async (data: LoginFormData) => {
     const response = await loginUser(data);
     if (response) {
       setUser(response);
-      navigate("/dashboard");
+      navigate("/chat");
     }
   };
 
