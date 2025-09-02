@@ -8,6 +8,7 @@ import jwt from "jsonwebtoken";
 import { Server } from "socket.io";
 import { Request, Response, NextFunction } from "express";
 import { SocketData } from "./Types/socket";
+import { addUserNameToFriendList } from "./controllers/user.controller";
 dotenv.config();
 
 // Routes I2mport
@@ -31,11 +32,15 @@ app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(cookiesParser());
 app.use("/user", UserRouter);
-
+app.get("/random",(req,res)=>{
+  console.log("han aa gayi");
+  res.redirect("https://www.google.com");
+})
 app.use((err: unknown, req: Request, res: Response, next: NextFunction) => {
   console.error(err);
   res.status(500).json({ message: "Internal Server Error" });
 });
+
 const server = app.listen(Port, () => {
   console.log(`Started listening on Port ${Port}`);
 });
@@ -46,6 +51,7 @@ const io = new Server<any, any, any, SocketData>(server, {
     credentials: true,
   },
 });
+app.set("io",io);
 io.use((socket, next) => {
   const token = socket.handshake.headers.cookie;
   if (!token) {
@@ -69,11 +75,8 @@ io.use((socket, next) => {
   };
   next();
 });
+
 io.on("connection", (socket) => {
-  socket.on("sendRequest", (userName: string) => {
-    socket.to(userName).emit("receivedRequest",socket.data.user.userName)
-    console.log("what we got from that :", userName);
-  });
   socket.join(socket.data.user.userName);
-  console.log(`A user Connected with userName ${socket.data.user.userName}`);
+  console.log(`A user Connected w ith userName ${socket.data.user.userName}`);
 });
