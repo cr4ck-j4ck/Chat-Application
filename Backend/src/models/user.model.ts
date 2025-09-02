@@ -1,27 +1,29 @@
-import mongoose, { Document, Schema, model } from 'mongoose';
+import mongoose, { Document, Schema, model } from "mongoose";
 
 /** 🔑 Enum for Login Provider */
 export enum AuthProvider {
-  EMAIL = 'email',
-  GOOGLE = 'google',
+  EMAIL = "email",
+  GOOGLE = "google",
 }
 
 /** 🧠 Interface for User document */
 export interface IUser extends Document {
   firstName: string;
   lastName: string;
+  bio:string;
   email: string;
   avatar?: string;
   provider: AuthProvider;
   password?: string; // optional for social login
-  status: 'online' | 'offline' | 'away';
+  status: "online" | "offline" | "away";
   lastSeen: Date;
   friends: mongoose.Types.ObjectId[]; // References to other users
+  friendsRequests: mongoose.Types.ObjectId[]; // References to other users
   blockedUsers: mongoose.Types.ObjectId[];
   socketId?: string;
-  chats:string[]|null;
+  chats: string[] | null;
   createdAt: Date;
-  userName:string;
+  userName: string;
   updatedAt: Date;
 }
 
@@ -37,10 +39,11 @@ const UserSchema = new Schema<IUser>(
       type: String,
       trim: true,
     },
-    userName:{
-      type:String,
-      trim:true,
-      unique:true
+    bio:String,
+    userName: {
+      type: String,
+      trim: true,
+      unique: true,
     },
     email: {
       type: String,
@@ -51,13 +54,13 @@ const UserSchema = new Schema<IUser>(
 
     avatar: {
       type: String,
-      default: '', // or default avatar URL
+      default: "", // or default avatar URL
     },
 
     provider: {
       type: String,
       enum: Object.values(AuthProvider),
-      default: AuthProvider.EMAIL
+      default: AuthProvider.EMAIL,
     },
 
     password: {
@@ -69,8 +72,8 @@ const UserSchema = new Schema<IUser>(
 
     status: {
       type: String,
-      enum: ['online', 'offline', 'away'],
-      default: 'offline',
+      enum: ["online", "offline", "away"],
+      default: "offline",
     },
 
     lastSeen: {
@@ -81,25 +84,31 @@ const UserSchema = new Schema<IUser>(
     friends: [
       {
         type: Schema.Types.ObjectId,
-        ref: 'User',
+        ref: "User",
       },
     ],
 
+    friendsRequests: [
+      {
+        type: Schema.Types.ObjectId,
+        ref: "User",
+      },
+    ],
     blockedUsers: [
       {
         type: Schema.Types.ObjectId,
-        ref: 'User',
+        ref: "User",
       },
     ],
-    chats:[
+    chats: [
       {
-        type:Schema.Types.ObjectId,
-        ref:'Chat'
-      }
+        type: Schema.Types.ObjectId,
+        ref: "Chat",
+      },
     ],
     socketId: {
       type: String,
-      default: '',
+      default: "",
     },
   },
   {
@@ -108,5 +117,5 @@ const UserSchema = new Schema<IUser>(
 );
 
 /** 🚀 User Model */
-const User = model<IUser>('User', UserSchema);
+const User = model<IUser>("User", UserSchema);
 export default User;
