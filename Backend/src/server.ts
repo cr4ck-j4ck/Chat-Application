@@ -47,7 +47,7 @@ const server = app.listen(Port, () => {
 
 const io = new Server<any, any, any, SocketData>(server, {
   cors: {
-    origin: "http://localhost:5173",
+    origin: ["http://localhost:5173","https://gufta-gu.vercel.app"],
     credentials: true,
   },
 });
