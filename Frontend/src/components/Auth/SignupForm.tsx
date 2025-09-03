@@ -32,7 +32,7 @@ export default function SignupForm({ onSignup }: SignupFormProps) {
     const parsedResult = signupSchema.safeParse(userData);
     if (parsedResult.success) {
       signupForm.reset();
-      const [error, data] = await wrapAsync(createUser, userData);
+      const [error] = await wrapAsync(createUser, userData);
       if (error) {
         console.log(error);
       } else {

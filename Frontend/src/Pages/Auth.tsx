@@ -38,7 +38,7 @@ export default function AuthPage() {
     if(user){
       navigate("/chat");
     }
-  },[]);
+  },[user]);
   const handleLogin = async (data: LoginFormData) => {
     const response = await loginUser(data);
     if (response) {
@@ -47,7 +47,7 @@ export default function AuthPage() {
     }
   };
 
-  const handleSignup = async (userData: SignupFormData) => {
+  const handleSignup = async () => {
     setShowSuccessMessage(true);
     setTimeout(() => {
       setShowSuccessMessage(false);
