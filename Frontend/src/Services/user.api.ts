@@ -22,13 +22,21 @@ export async function createUser(userData: IuserData) {
 export async function loginUser(userData: {
   email: string;
   password: string;
-}): Promise<Iuser> {
-  const res = await axios.post(
-    `${BackendURL}/user/login`,
-    { userData },
-    { withCredentials: true }
-  );
-  return res.data;
+}): Promise<Iuser | Error> {
+  try {
+    const res = await axios.post(
+      `${BackendURL}/user/login`,
+      { userData },
+      { withCredentials: true }
+    );
+    return res.data;
+  } catch (err) {
+    if (err instanceof AxiosError) {
+      console.log(err);
+      return new Error(err.response?.data);
+    }
+    return new Error("Something went wrong!!");
+  }
 }
 
 type IgetUser = [Error, null] | [null, Iuser];
@@ -85,9 +93,9 @@ export interface IfriendRequests {
   _id: string;
 }
 
-export interface Ifriends extends IfriendRequests{
+export interface Ifriends extends IfriendRequests {
   online: boolean;
-};
+}
 
 interface IfriendList {
   friendRequestList: IfriendRequests[] | undefined;
@@ -125,7 +133,10 @@ export const rejectFriendRequest = async (id: string) => {
   return res.data;
 };
 
-export const removeFriend = async (id:string)=>{
-  const res = await axios.delete(`${BackendURL}/user/friends?friendId=${id.trim()}`,{withCredentials:true});
-  return res.data
-}
+export const removeFriend = async (id: string) => {
+  const res = await axios.delete(
+    `${BackendURL}/user/friends?friendId=${id.trim()}`,
+    { withCredentials: true }
+  );
+  return res.data;
+};
