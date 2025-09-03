@@ -18,7 +18,6 @@ import useUserStore from "@/Store/user.store";
 import { useShallow } from "zustand/react/shallow";
 import type {
   LoginFormData,
-  SignupFormData,
 } from "@/components/Auth/AuthSchema";
 import { loginUser } from "@/Services/user.api";
 
