@@ -21,7 +21,7 @@ connectDB(process.env.MONGO_URI!);
 // Using Routes
 app.use(
   cors({
-    origin: "http://localhost:5173", // specify exact origin
+    origin: ["http://localhost:5173","https://gufta-gu.vercel.app/"], // specify exact origin
     credentials: true, // allow credentials
     methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
     allowedHeaders: ["Content-Type", "Authorization"],
