@@ -43,7 +43,7 @@ export async function loginUser(req: Request, res: Response) {
   console.log(email, password);
   const existingUser = await User.findOne({ email: email });
   if (!existingUser) {
-    return res.status(400).send("User not Exists!!");
+    return res.status(400).send("User Not Exists with this Email !!");
   }
   if (!existingUser.password) {
     return res

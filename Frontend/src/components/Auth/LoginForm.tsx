@@ -6,9 +6,9 @@ import { MessageCircle } from "lucide-react";
 import { loginSchema, type LoginFormData } from "./AuthSchema";
 import AuthInput from "./AuthInput";
 import AuthPasswordInput from "./AuthPasswordInput";
-
+import type { UseFormReturn } from "react-hook-form";
 interface LoginFormProps {
-  onLogin: (data: LoginFormData) => void;
+  onLogin: (data: LoginFormData, loginForm : UseFormReturn<LoginFormData>) => void;
 }
 
 export default function LoginForm({ onLogin }: LoginFormProps) {
@@ -19,9 +19,9 @@ export default function LoginForm({ onLogin }: LoginFormProps) {
       password: "",
     },
   });
-
+//  I want to pass loginForm to the function onLogin , I passed the data but I am not able to mention the type of the second argument 
   return (
-    <form onSubmit={loginForm.handleSubmit(onLogin)} className="space-y-4">
+    <form onSubmit={loginForm.handleSubmit((data)=> {onLogin(data,loginForm)})} className="space-y-4">
       <AuthInput
         id="login-email"
         type="email"

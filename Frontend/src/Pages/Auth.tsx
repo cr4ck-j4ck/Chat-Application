@@ -16,6 +16,7 @@ import SignupForm from "@/components/Auth/SignupForm";
 import SocialLoginButtons from "@/components/Auth/SocialLoginButton";
 import useUserStore from "@/Store/user.store";
 import { useShallow } from "zustand/react/shallow";
+import {type  UseFormReturn } from "react-hook-form";
 import type {
   LoginFormData,
 } from "@/components/Auth/AuthSchema";
@@ -38,12 +39,16 @@ export default function AuthPage() {
       navigate("/chat");
     }
   },[user]);
-  const handleLogin = async (data: LoginFormData) => {
+  const handleLogin = async (data: LoginFormData,loginForm:UseFormReturn<LoginFormData>) => {
     const response = await loginUser(data);
-    if (response) {
-      setUser(response);
-      navigate("/chat");
+    if (response instanceof Error) {
+      return loginForm.setError("password",{
+        type:"validate",
+        message: response.message
+      });
     }
+    setUser(response);
+    // navigate("/chat");
   };
 
   const handleSignup = async () => {
