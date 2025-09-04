@@ -48,7 +48,7 @@ export default function AuthPage() {
       });
     }
     setUser(response);
-    // navigate("/chat");
+    navigate("/chat");
   };
 
   const handleSignup = async () => {
