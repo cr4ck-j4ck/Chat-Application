@@ -1,12 +1,11 @@
 import mongoose, { Schema, model, Document, Types, mongo } from "mongoose";
 
-export interface IChat extends Document {
+interface IChat extends Document {
   type: "direct" | "group";
   participants: Types.ObjectId[]; // User references
   lastMessage: {
     content: string,
     senderId: string,
-    timestamp: Date
   },
   createdAt: Date;
 }
@@ -25,8 +24,7 @@ const chatSchema = new Schema<IChat>(
       senderId: {
         type:String,
         required:true
-      },
-      timestamp: Date
+      }
     },
   },
   { timestamps: { createdAt: true, updatedAt: true } }
