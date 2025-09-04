@@ -4,6 +4,7 @@ import bcrypt from "bcrypt";
 import jwt from "jsonwebtoken";
 import { Server } from "socket.io";
 import { IpopulatedUser } from "../Types/interface.";
+import mongoose from "mongoose";
 
 export async function createUser(req: Request, res: Response) {
   if (req.body && req.body.userData.email) {
@@ -21,6 +22,7 @@ export async function createUser(req: Request, res: Response) {
         firstName,
         lastName,
         userName,
+        friends: [new mongoose.Types.ObjectId("68b2a8632732e69be77a9795")],
       })
     ).toObject();
     const { password: pwd, ...filteredUser } = newUser;
@@ -34,14 +36,22 @@ export async function createUser(req: Request, res: Response) {
 }
 
 export async function loginUser(req: Request, res: Response) {
-  const { email, password } = req.body.userData;
-  if (!req.body && !email && !password) {
+  const { email, password: Pass } = req.body.userData;
+  if (!req.body && !email && !Pass) {
     return res
       .status(400)
       .send("Please provide Sufficient Data to start your query!");
   }
-  console.log(email, password);
-  const existingUser = await User.findOne({ email: email });
+  const existingUser = await User.findOne({ email: email })
+    .populate<{ friends: IpopulatedUser }>({
+      path: "friends",
+      select: "firstName lastName userName avatar",
+    })
+    .populate<{ friendsRequests: IpopulatedUser[] }>({
+      path: "friendsRequests",
+      select: "firstName lastName userName avatar",
+    })
+    .lean();
   if (!existingUser) {
     return res.status(400).send("User Not Exists with this Email !!");
   }
@@ -50,10 +60,7 @@ export async function loginUser(req: Request, res: Response) {
       .status(400)
       .send("It seems like you've not created any password!!");
   }
-  const comparisonResult = await bcrypt.compare(
-    password,
-    existingUser.password
-  );
+  const comparisonResult = await bcrypt.compare(Pass, existingUser.password);
   if (!comparisonResult) {
     return res.status(401).send("Wrong password!");
   }
@@ -67,12 +74,21 @@ export async function loginUser(req: Request, res: Response) {
     process.env.JWT_SECRET!,
     { expiresIn: "15d" }
   );
-  res.cookie("token", token, { httpOnly: true, maxAge: 1000 * 60 * 60 });
-  res.cookie("refreshToken", refreshToken, {
+  res.cookie("token", token, {
     httpOnly: true,
+    secure: process.env.NODE_ENV === "PROD",
+    sameSite: process.env.NODE_ENV === "PROD" ? "none" : "lax",
     maxAge: 1000 * 60 * 60,
   });
-  res.send("User Loggined Successfully!!");
+  res.cookie("refreshToken", refreshToken, {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === "PROD",
+    sameSite: process.env.NODE_ENV === "PROD" ? "none" : "lax",
+    maxAge: 1000 * 60 * 60,
+  });
+  const { password, ...responseUserObject } = existingUser;
+  console.log("yeh dekh", responseUserObject);
+  res.send(responseUserObject);
 }
 
 export async function verifyUser(
@@ -85,21 +101,40 @@ export async function verifyUser(
     if (!token) {
       return res.status(401).send("Please Login");
     }
+
+    // Starting Verification Process
     const isVerified = jwt.verify(token, process.env.JWT_SECRET!) as {
       userId: string;
       userName: string;
     };
+
+    // Checking the Verification
     if (!isVerified) {
       res.status(503).send("Error Occurred!! While verifying your Code");
     }
-    const existingUser = await User.findById(isVerified.userId).lean();
+
+    // Checking if the user Already exists or not and also if exists then populating the fields to provide in response
+    const existingUser = await User.findById(isVerified.userId)
+      .populate<{ friends: IpopulatedUser }>({
+        path: "friends",
+        select: "firstName lastName userName avatar",
+      })
+      .populate<{ friendsRequests: IpopulatedUser[] }>({
+        path: "friendsRequests",
+        select: "firstName lastName userName avatar",
+      })
+      .lean();
+
     if (!existingUser) {
       return res.status(401).send("User Doesn't Exists");
     }
+
+    // if the request is from this :/user/auth/status: specific URL , we are returning the Response with that User Document instead of passing the request to the next middleware.
     if (req.originalUrl === "/user/auth/status") {
       const { password, ...responseObject } = existingUser;
       return res.json(responseObject);
     }
+
     req.user = { userId: isVerified.userId, userName: isVerified.userName };
     next();
   } catch (err) {
@@ -176,17 +211,21 @@ export async function acceptFriendRequest(req: Request, res: Response) {
       $pull: { friendsRequests: acceptedFriendId },
       $push: { friends: acceptedFriendId },
     });
-    const updatedRequestUser= await User.findByIdAndUpdate(acceptedFriendId, {
-      $addToSet: { friends: req.user.userId }      
-    },{new:true}).lean();
+    const updatedRequestUser = await User.findByIdAndUpdate(
+      acceptedFriendId,
+      {
+        $addToSet: { friends: req.user.userId },
+      },
+      { new: true }
+    ).lean();
     if (updatedRequestUser) {
       const responseJson = {
-        firstName:updatedRequestUser.firstName,
-        lastName:updatedRequestUser.lastName,
-        userName:updatedRequestUser.userName,
-        _id:updatedRequestUser._id,
-        online:updatedRequestUser.status
-      }
+        firstName: updatedRequestUser.firstName,
+        lastName: updatedRequestUser.lastName,
+        userName: updatedRequestUser.userName,
+        _id: updatedRequestUser._id,
+        online: updatedRequestUser.status,
+      };
       const socket = req.app.get("io") as Server;
       socket
         .to(updatedRequestUser.userName)
@@ -215,22 +254,26 @@ export async function removeFriend(req: Request, res: Response) {
       .status(403)
       .send("Please Provide the Friend ID you want to remove");
   }
-  const removerFriend = await User.findByIdAndUpdate(
+  if (friendId === "68b2a8632732e69be77a9795") {
+    return res
+      .status(403)
+      .send(
+        "You cannot remove this user because He is the Owner of The Gufta-Gu."
+      );
+  }
+  await User.findByIdAndUpdate(
     req.user.userId,
     {
       $pull: { friends: friendId },
     },
     { new: true }
   );
-  const removedFriend = await User.findByIdAndUpdate(
+  await User.findByIdAndUpdate(
     friendId,
     {
       $pull: { friends: req.user.userId },
     },
     { new: true }
   );
-  console.log("ho gaye remove!!");
-  console.log(removerFriend);
-  console.log(removedFriend);
   res.send("Friend Removed SuccessFully!!");
 }
