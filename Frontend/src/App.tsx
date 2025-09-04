@@ -25,7 +25,7 @@ function App() {
             setFetchResult("error");
             return console.log(err);
           }
-          setUser(user!);
+          setUser(user);
         })
         .catch((err) => {
           console.log("Error Occurred", err);

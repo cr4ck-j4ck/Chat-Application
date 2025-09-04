@@ -1,6 +1,15 @@
 import { AuthProvider, IUser } from "../models/user.model";
-import mongoose from "mongoose";
+import mongoose, { mongo } from "mongoose";
 
+interface IChat {
+  type: "direct" | "group";
+  participants: Types.ObjectId[]; // User references
+  lastMessage: {
+    content: string,
+    senderId: string,
+  },
+  createdAt: Date;
+}
 
 export interface IUser {
   firstName: string;
@@ -16,7 +25,7 @@ export interface IUser {
   friendsRequests: mongoose.Types.ObjectId[]; // References to other users
   blockedUsers: mongoose.Types.ObjectId[];
   socketId?: string;
-  chats: string[] | null;
+  chats: mongoose.Types.ObjectId[];
   createdAt: Date;
   userName: string;
   updatedAt: Date;
@@ -26,4 +35,5 @@ export interface IpopulatedUser extends IUser{
   friends:IUser[];
   friendsRequests:IUser[];
   blockedUsers:IUser[];
+  Chats:Chat[];
 }

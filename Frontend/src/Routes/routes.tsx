@@ -5,6 +5,7 @@ import ChatPage from "@/Pages/Chat";
 import PrivateRoutes from "@/components/PrivateRoutes";
 import DashboardPage from "@/Pages/Dashboard";
 
+
 export default function AppRoutes(){
     return (
         <Routes>

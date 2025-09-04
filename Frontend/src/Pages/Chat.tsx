@@ -5,7 +5,6 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Link } from "react-router-dom";
-import { Badge } from "@/components/ui/badge";
 import { Toaster } from "@/components/ui/sonner";
 import {
   Dialog,
@@ -15,7 +14,7 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog";
 import useGlobalStore from "@/Store/global.store";
-import useUserStore from "@/Store/user.store";
+import useUserStore, { type Ifriends } from "@/Store/user.store";
 import { Textarea } from "@/components/ui/textarea";
 import { sendFriendRequest } from "@/Services/user.api";
 import {
@@ -36,19 +35,7 @@ import {
   MessageCircle,
   Users,
 } from "lucide-react";
-
-interface Chat {
-  id: string;
-  name: string;
-  avatar: string;
-  lastMessage: string;
-  timestamp: string;
-  unreadCount: number;
-  isOnline: boolean;
-  isPinned: boolean;
-  isMuted: boolean;
-  type: "direct" | "group";
-}
+import ChatItem, { type Chat } from "@/components/Chat/ChatItem";
 
 interface Message {
   id: string;
@@ -60,8 +47,9 @@ interface Message {
 
 const mockChats: Chat[] = [
   {
-    id: "1",
-    name: "Sarah Johnson",
+    _id: "1",
+    firstName: "Sarah",
+    lastName: "Jhonson",
     avatar: "/diverse-woman-portrait.png",
     lastMessage: "Hey! How are you doing today?",
     timestamp: "2 min ago",
@@ -72,8 +60,9 @@ const mockChats: Chat[] = [
     type: "direct",
   },
   {
-    id: "2",
-    name: "Team Alpha",
+    _id: "2",
+    firstName: "Team Alpha",
+    lastName: "Alpha",
     avatar: "/diverse-professional-team.png",
     lastMessage: "Meeting at 3 PM today",
     timestamp: "15 min ago",
@@ -84,8 +73,9 @@ const mockChats: Chat[] = [
     type: "group",
   },
   {
-    id: "3",
-    name: "Alex Chen",
+    _id: "3",
+    firstName: "Alex",
+    lastName: "Chen",
     avatar: "/thoughtful-man.png",
     lastMessage: "Thanks for the help!",
     timestamp: "1 hour ago",
@@ -96,8 +86,9 @@ const mockChats: Chat[] = [
     type: "direct",
   },
   {
-    id: "4",
-    name: "Design Team",
+    _id: "4",
+    firstName: "Design",
+    lastName: "Team",
     avatar: "/abstract-design-elements.png",
     lastMessage: "New mockups are ready",
     timestamp: "2 hours ago",
@@ -134,7 +125,9 @@ const mockMessages: Message[] = [
 ];
 
 export default function ChatPage() {
-  const [selectedChat, setSelectedChat] = useState<Chat | null>(null);
+  const [selectedChat, setSelectedChat] = useState<Chat | Ifriends | null>(
+    null
+  );
   const [searchQuery, setSearchQuery] = useState("");
   const [newMessage, setNewMessage] = useState("");
   const [contextMenu, setContextMenu] = useState<{
@@ -146,16 +139,10 @@ export default function ChatPage() {
   const [friendUsername, setFriendUsername] = useState("");
   const [chats, setChats] = useState(mockChats);
   const [messages, setMessages] = useState(mockMessages);
-  const [isLoading, setIsLoading] = useState(true);
   const user = useUserStore((state) => state.user);
   const contextMenuRef = useRef<HTMLDivElement>(null);
   const socket = useGlobalStore((state) => state.socket);
-  // Simulate loading animation
-  useEffect(() => {
-    const timer = setTimeout(() => setIsLoading(false), 1000);
-    return () => clearTimeout(timer);
-  }, []);
-
+  let filteredFriends: Ifriends[] = [];
   // Close context menu when clicking outside
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -171,10 +158,21 @@ export default function ChatPage() {
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
-  const filteredChats = chats.filter((chat) =>
-    chat.name.toLowerCase().includes(searchQuery.toLowerCase())
+  const filteredChats: Chat[] = chats.filter((chat) =>
+    chat.firstName
+      .concat(" ", chat.lastName)
+      .toLowerCase()
+      .includes(searchQuery.toLowerCase())
   );
-
+  if (user) {
+    console.log(user.friends);
+    filteredFriends = user.friends.filter((friend) =>
+      friend.firstName
+        .concat(" ", friend.lastName)
+        .toLowerCase()
+        .includes(searchQuery.toLowerCase())
+    );
+  }
   const handleRightClick = (e: React.MouseEvent, chatId: string) => {
     e.preventDefault();
     setContextMenu({
@@ -187,7 +185,7 @@ export default function ChatPage() {
   const handleContextAction = (action: string, chatId: string) => {
     setChats((prevChats) =>
       prevChats.map((chat) => {
-        if (chat.id === chatId) {
+        if (chat._id === chatId) {
           switch (action) {
             case "pin":
               return { ...chat, isPinned: !chat.isPinned };
@@ -231,7 +229,6 @@ export default function ChatPage() {
         return toast.error("Abe sale Khud ko kon Request bhejta hai!!");
       }
       const response = await sendFriendRequest(friendUsername);
-      console.log("yeh dekh sendFriendRequest ka response", response);
       if (response === "Request Sent") {
         toast(`Sent Request to ${friendUsername}`);
         setFriendUsername("");
@@ -317,86 +314,79 @@ export default function ChatPage() {
 
         {/* Chat List */}
         <div className="flex-1 overflow-y-auto">
-          {isLoading ? (
-            <div className="p-4 space-y-3">
-              {[1, 2, 3, 4].map((i) => (
-                <div
-                  key={i}
-                  className="flex items-center space-x-3 animate-pulse-slow"
-                >
-                  <div className="w-12 h-12 bg-muted rounded-full"></div>
-                  <div className="flex-1 space-y-2">
-                    <div className="h-4 bg-muted rounded w-3/4"></div>
-                    <div className="h-3 bg-muted rounded w-1/2"></div>
-                  </div>
-                </div>
-              ))}
-            </div>
-          ) : (
-            <div className="p-2">
-              {/* Pinned Chats */}
-              {filteredChats.filter((chat) => chat.isPinned).length > 0 && (
-                <div className="mb-4">
-                  <div className="px-2 py-1 text-xs font-semibold text-muted-foreground uppercase tracking-wide flex items-center">
-                    <Pin className="h-3 w-3 mr-1" />
-                    Pinned
-                  </div>
-                  {filteredChats
-                    .filter((chat) => chat.isPinned)
-                    .map((chat) => (
-                      <ChatItem
-                        key={chat.id}
-                        chat={chat}
-                        isSelected={selectedChat?.id === chat.id}
-                        onClick={() => setSelectedChat(chat)}
-                        onRightClick={(e) => handleRightClick(e, chat.id)}
-                      />
-                    ))}
-                </div>
-              )}
-
-              {/* Regular Chats */}
+          <div className="p-2">
+            {/* Pinned Chats */}
+            {filteredChats.filter((chat) => chat.isPinned).length > 0 && (
               <div className="mb-4">
                 <div className="px-2 py-1 text-xs font-semibold text-muted-foreground uppercase tracking-wide flex items-center">
-                  <MessageCircle className="h-3 w-3 mr-1" />
-                  Direct Messages
+                  <Pin className="h-3 w-3 mr-1" />
+                  Pinned
                 </div>
                 {filteredChats
-                  .filter((chat) => !chat.isPinned && chat.type === "direct")
+                  .filter((chat) => chat.isPinned)
                   .map((chat) => (
                     <ChatItem
-                      key={chat.id}
+                      key={chat._id}
                       chat={chat}
-                      isSelected={selectedChat?.id === chat.id}
+                      isSelected={selectedChat?._id === chat._id}
                       onClick={() => setSelectedChat(chat)}
-                      onRightClick={(e) => handleRightClick(e, chat.id)}
+                      onRightClick={(e) => handleRightClick(e, chat?._id)}
                     />
                   ))}
               </div>
+            )}
 
-              {/* Group Chats */}
-              {filteredChats.filter((chat) => chat.type === "group").length >
-                0 && (
-                <div>
-                  <div className="px-2 py-1 text-xs font-semibold text-muted-foreground uppercase tracking-wide flex items-center">
-                    <Users className="h-3 w-3 mr-1" />
-                    Groups
-                  </div>
-                  {filteredChats
-                    .filter((chat) => !chat.isPinned && chat.type === "group")
-                    .map((chat) => (
-                      <ChatItem
-                        key={chat.id}
-                        chat={chat}
-                        isSelected={selectedChat?.id === chat.id}
-                        onClick={() => setSelectedChat(chat)}
-                        onRightClick={(e) => handleRightClick(e, chat.id)}
-                      />
-                    ))}
-                </div>
-              )}
+            {/* Regular Chats */}
+            <div className="mb-4">
+              <div className="px-2 py-1 text-xs font-semibold text-muted-foreground uppercase tracking-wide flex items-center">
+                <MessageCircle className="h-3 w-3 mr-1" />
+                Direct Messages
+              </div>
+              {filteredChats
+                .filter((chat) => !chat.isPinned && chat.type === "direct")
+                .map((chat) => (
+                  <ChatItem
+                    key={chat._id}
+                    chat={chat}
+                    isSelected={selectedChat?._id === chat._id}
+                    onClick={() => setSelectedChat(chat)}
+                    onRightClick={(e) => handleRightClick(e, chat._id)}
+                  />
+                ))}
             </div>
-          )}
+
+            {/* Group Chats */}
+            {filteredChats.filter((chat) => chat.type === "group").length >
+              0 && (
+              <div>
+                <div className="px-2 py-1 text-xs font-semibold text-muted-foreground uppercase tracking-wide flex items-center">
+                  <Users className="h-3 w-3 mr-1" />
+                  Groups
+                </div>
+                {filteredChats
+                  .filter((chat) => !chat.isPinned && chat.type === "group")
+                  .map((chat) => (
+                    <ChatItem
+                      key={chat._id}
+                      chat={chat}
+                      isSelected={selectedChat?._id === chat._id}
+                      onClick={() => setSelectedChat(chat)}
+                      onRightClick={(e) => handleRightClick(e, chat._id)}
+                    />
+                  ))}
+              </div>
+            )}
+            {searchQuery.length > 0 &&
+              filteredFriends.map((friend) => (
+                <ChatItem
+                  key={friend._id}
+                  isSelected={selectedChat?._id === friend._id}
+                  onClick={() => setSelectedChat(friend)}
+                  chat={friend}
+                  onRightClick={(e) => handleRightClick(e, friend._id)}
+                />
+              ))}
+          </div>
         </div>
       </div>
 
@@ -412,17 +402,25 @@ export default function ChatPage() {
                     <AvatarImage
                       src={selectedChat.avatar || "/placeholder.svg"}
                     />
-                    <AvatarFallback>{selectedChat.name[0]}</AvatarFallback>
+                    <AvatarFallback>
+                      {selectedChat.firstName[0].concat(
+                        selectedChat.lastName[0]
+                      )}
+                    </AvatarFallback>
                   </Avatar>
                   <div>
                     <h2 className="font-semibold text-card-foreground">
-                      {selectedChat.name}
+                      {selectedChat.firstName.concat(
+                        " ",
+                        selectedChat.lastName
+                      )}
                     </h2>
-                    <p className="text-sm text-muted-foreground">
-                      {selectedChat.isOnline
+                    // TODO
+                    {/* <p className="text-sm text-muted-foreground">
+                      {selectedChat.
                         ? "Online"
                         : "Last seen 2 hours ago"}
-                    </p>
+                    </p> */}
                   </div>
                 </div>
                 <div className="flex items-center space-x-2">
@@ -561,66 +559,6 @@ export default function ChatPage() {
           </button>
         </div>
       )}
-    </div>
-  );
-}
-
-interface ChatItemProps {
-  chat: Chat;
-  isSelected: boolean;
-  onClick: () => void;
-  onRightClick: (e: React.MouseEvent) => void;
-}
-
-function ChatItem({ chat, isSelected, onClick, onRightClick }: ChatItemProps) {
-  return (
-    <div
-      className={`p-3 rounded-lg cursor-pointer transition-all duration-200 hover:bg-sidebar-accent/10 ${
-        isSelected ? "bg-sidebar-accent/20 border border-sidebar-accent/30" : ""
-      }`}
-      onClick={onClick}
-      onContextMenu={onRightClick}
-    >
-      <div className="flex items-center space-x-3">
-        <div className="relative">
-          <Avatar className="h-12 w-12">
-            <AvatarImage src={chat.avatar || "/placeholder.svg"} />
-            <AvatarFallback>{chat.name[0]}</AvatarFallback>
-          </Avatar>
-          {chat.isOnline && (
-            <div className="absolute -bottom-1 -right-1 w-4 h-4 bg-green-500 border-2 border-sidebar rounded-full"></div>
-          )}
-        </div>
-        <div className="flex-1 min-w-0">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center space-x-2">
-              <h3 className="font-medium text-sidebar-foreground truncate">
-                {chat.name}
-              </h3>
-              {chat.isPinned && <Pin className="h-3 w-3 text-sidebar-accent" />}
-              {chat.isMuted && (
-                <VolumeX className="h-3 w-3 text-muted-foreground" />
-              )}
-              {chat.type === "group" && (
-                <Users className="h-3 w-3 text-muted-foreground" />
-              )}
-            </div>
-            <span className="text-xs text-muted-foreground">
-              {chat.timestamp}
-            </span>
-          </div>
-          <div className="flex items-center justify-between">
-            <p className="text-sm text-muted-foreground truncate">
-              {chat.lastMessage}
-            </p>
-            {chat.unreadCount > 0 && (
-              <Badge className="bg-primary text-primary-foreground text-xs px-2 py-1 rounded-full">
-                {chat.unreadCount}
-              </Badge>
-            )}
-          </div>
-        </div>
-      </div>
     </div>
   );
 }

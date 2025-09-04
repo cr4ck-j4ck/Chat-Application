@@ -16,7 +16,8 @@ const useGlobalStore = create<IglobalStore>((set) => ({
   },
   setSocket(toUpdate) {
     set({socket:toUpdate});
-  },
-}));
+  }
+})
+)
 
 export default useGlobalStore;
