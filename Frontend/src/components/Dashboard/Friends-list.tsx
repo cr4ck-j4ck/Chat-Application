@@ -1,5 +1,3 @@
-"use client";
-
 import { useEffect, useMemo, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -11,77 +9,72 @@ import { Search, UserMinus, Pin, VolumeX, Check, X, Clock } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   acceptFriendRequest,
-  fetchFriendList,
+  updateFriendList,
   rejectFriendRequest,
   removeFriend,
 } from "@/Services/user.api";
-import type { IfriendRequests, Ifriends } from "@/Services/user.api";
+import { type IfriendRequests } from "@/Store/user.store";
 import useGlobalStore from "@/Store/global.store";
+import useUserStore from "@/Store/user.store";
+import { useShallow } from "zustand/react/shallow";
 
 export function FriendsList() {
   const [query, setQuery] = useState("");
-  const [friends, setFriends] = useState<Ifriends[]>([]);
   const [friendsRequest, setFriendsRequest] = useState<
     IfriendRequests[] | null
   >(null);
   const socket = useGlobalStore((state) => state.socket);
+  const { user, setFriends } = useUserStore(
+    useShallow((state) => ({ user: state.user, setFriends: state.setFriends }))
+  );
+
   const filtered = useMemo(() => {
-    if (friends.length > 0) {
+    if (user && user.friends.length > 0) {
       const q = query.toLowerCase().trim();
-      if (!q) return friends;
-      return friends.filter(
+      if (!q) return user.friends;
+      return user.friends.filter(
         (f) =>
           f.firstName.concat(" ", f.lastName).toLowerCase().includes(q) ||
           f.userName.toLowerCase().includes(q)
       );
     }
-  }, [query, friends]);
-
-  function updateFriendList() {
-    fetchFriendList().then((response) => {
-      if (!(response instanceof Error)) {
-        if (response.friendRequestList) {
-          setFriendsRequest(response.friendRequestList);
-        }
-        if (response.friends) {
-          setFriends(response.friends);
-        }
-      }
-    });
-  }
-
- useEffect(() => {
-  if (!socket) return;
-  
-  const handleReceivedRequest = (userName:string) => {
-    updateFriendList();
-    toast(`You Got Request from ${userName}`);
-  };
-  
-  socket.on("receivedRequest", handleReceivedRequest);
-  
-  // Cleanup function to remove the listener when component unmounts
-  return () => {
-    socket.off("receivedRequest", handleReceivedRequest);
-  };
-}, [socket]); // Only re-run if socket changes
+  }, [query, user?.friends]);
 
   useEffect(() => {
-    updateFriendList();
-  }, []);
+    if (!socket) return;
+
+    const handleReceivedRequest = (userName: string) => {
+      updateFriendList(setFriendsRequest, setFriends);
+      toast(`You Got Request from ${userName}`);
+    };
+
+    socket.on("receivedRequest", handleReceivedRequest);
+
+    // Cleanup function to remove the listener when component unmounts
+    return () => {
+      socket.off("receivedRequest", handleReceivedRequest);
+    };
+  }, [socket]); // Only re-run if socket changes
 
   const acceptTheFriendRequest = async (id: string) => {
     const res = await acceptFriendRequest(id);
-    setFriends(state => [...state ,res])
+    setFriends(res);
     setFriendsRequest((state) => (state ?? []).filter((el) => el._id != id));
     toast("Friend Request Accepted SuccessFully!!");
   };
 
   const handleRemoveFriend = async (id: string) => {
-    const res = await removeFriend(id);
-    console.log(res);
-    setFriends((state) => state.filter((el) => el._id != id));
-    toast(res);
+    if (user) {
+      const res = await removeFriend(id);
+      if(res === "Friend Removed SuccessFully!!"){
+        setFriends(user.friends.filter((el) => el._id != id));        
+        toast(res);
+      }else{
+        toast(res);
+      }
+    } else {
+      toast.error("Please Login First!!");
+    }
   };
 
   const handleRejectRequest = async (id: string) => {
@@ -106,7 +99,7 @@ export function FriendsList() {
                 Connections
               </p>
               <CardTitle className="text-base sm:text-lg">
-                Friends ({friends.length})
+                Friends ({user?.friends.length})
               </CardTitle>
             </div>
             <div className="relative w-full sm:w-80">
@@ -239,20 +232,20 @@ export function FriendsList() {
                           </span>
                           <span
                             className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] ${
-                              f.online
+                              f.isOnline
                                 ? "bg-primary/10 text-primary"
                                 : "bg-muted text-muted-foreground"
                             }`}
-                            aria-label={f.online ? "Online" : "Offline"}
+                            aria-label={f.isOnline ? "Online" : "Offline"}
                           >
                             <span
                               className={`inline-block size-1.5 rounded-full ${
-                                f.online
+                                f.isOnline
                                   ? "bg-primary"
                                   : "bg-muted-foreground/50"
                               }`}
                             />
-                            {f.online ? "Online" : "Offline"}
+                            {f.isOnline ? "Online" : "Offline"}
                           </span>
                         </div>
                         <div className="text-xs text-muted-foreground">
