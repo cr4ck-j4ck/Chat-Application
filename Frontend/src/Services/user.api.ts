@@ -1,5 +1,9 @@
 import axios, { AxiosError } from "axios";
-import { type Iuser } from "@/Store/user.store";
+import type {
+  IresponseUser,
+  IfriendRequests,
+  Ifriends,
+} from "@/Store/user.store";
 const BackendURL = import.meta.env.VITE_BACKEND_URL;
 interface IuserData {
   firstName: string;
@@ -22,7 +26,7 @@ export async function createUser(userData: IuserData) {
 export async function loginUser(userData: {
   email: string;
   password: string;
-}): Promise<Iuser | Error> {
+}): Promise<IresponseUser | Error> {
   try {
     const res = await axios.post(
       `${BackendURL}/user/login`,
@@ -39,7 +43,7 @@ export async function loginUser(userData: {
   }
 }
 
-type IgetUser = [Error, null] | [null, Iuser];
+type IgetUser = [Error, null] | [null, IresponseUser];
 
 export const getUser = async (): Promise<IgetUser> => {
   try {
@@ -86,16 +90,6 @@ export const sendFriendRequest = async (
     return "Some Error Occurred While Sending the Friend Request";
   }
 };
-export interface IfriendRequests {
-  firstName: string;
-  lastName: string;
-  userName: string;
-  _id: string;
-}
-
-export interface Ifriends extends IfriendRequests {
-  online: boolean;
-}
 
 interface IfriendList {
   friendRequestList: IfriendRequests[] | undefined;
@@ -105,7 +99,6 @@ export const fetchFriendList = async (): Promise<IfriendList | Error> => {
   const response = await axios.get(`${BackendURL}/user/friendList`, {
     withCredentials: true,
   });
-  console.log("yeh Response aaya hai ", response.data);
   if (response.data) {
     return response.data;
   }
@@ -133,10 +126,35 @@ export const rejectFriendRequest = async (id: string) => {
   return res.data;
 };
 
-export const removeFriend = async (id: string) => {
-  const res = await axios.delete(
-    `${BackendURL}/user/friends?friendId=${id.trim()}`,
-    { withCredentials: true }
-  );
-  return res.data;
+export const removeFriend = async (id: string):Promise<string> => {
+  try {
+    const res = await axios.delete(
+      `${BackendURL}/user/friends?friendId=${id.trim()}`,
+      { withCredentials: true }
+    );
+    return res.data;
+  } catch (err) {
+    if(err instanceof AxiosError){
+      return err.response?.data;
+    }
+    return "Error while Removing the Friend!!";
+  }
 };
+
+export function updateFriendList(
+  setFriendsRequest: React.Dispatch<
+    React.SetStateAction<IfriendRequests[] | null>
+  >,
+  setFriends: (toUpdate: Ifriends | Ifriends[]) => void
+) {
+  fetchFriendList().then((response) => {
+    if (!(response instanceof Error)) {
+      if (response.friendRequestList) {
+        setFriendsRequest(response.friendRequestList);
+      }
+      if (response.friends) {
+        setFriends(response.friends);
+      }
+    }
+  });
+}
