@@ -35,7 +35,7 @@ function App() {
   }, []);
   useEffect(() => {
     if (user) {
-      const socket = io("http://localhost:3000", {
+      const socket = io(import.meta.env.VITE_BACKEND_URL, {
         reconnectionDelayMax: 10000,
         auth: {
           token: user.userName,

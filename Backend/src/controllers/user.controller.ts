@@ -22,7 +22,6 @@ export async function createUser(req: Request, res: Response) {
         firstName,
         lastName,
         userName,
-        friends: [new mongoose.Types.ObjectId("68b2a8632732e69be77a9795")],
       })
     ).toObject();
     const { password: pwd, ...filteredUser } = newUser;
@@ -258,7 +257,7 @@ export async function removeFriend(req: Request, res: Response) {
     return res
       .status(403)
       .send(
-        "You cannot remove this user because He is the Owner of The Gufta-Gu."
+        "You cannot remove Him. because He is the Owner of The Gufta-Gu."
       );
   }
   await User.findByIdAndUpdate(
