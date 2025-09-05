@@ -4,7 +4,6 @@ import bcrypt from "bcrypt";
 import jwt from "jsonwebtoken";
 import { Server } from "socket.io";
 import { IpopulatedUser } from "../Types/interface.";
-import mongoose from "mongoose";
 
 export async function createUser(req: Request, res: Response) {
   if (req.body && req.body.userData.email) {
@@ -86,7 +85,6 @@ export async function loginUser(req: Request, res: Response) {
     maxAge: 1000 * 60 * 60,
   });
   const { password, ...responseUserObject } = existingUser;
-  console.log("yeh dekh", responseUserObject);
   res.send(responseUserObject);
 }
 
@@ -151,21 +149,27 @@ export async function checkUniqueUsername(req: Request, res: Response) {
     return res.status(400).send("UserName required!!");
   }
   const existingUserWithUsername = await User.findOne({ userName });
-  console.log("UserName dekh existingUser se", existingUserWithUsername);
   if (!existingUserWithUsername) {
     return res.send(true);
   }
   res.send(false);
 }
+interface IfriendRequestsBody {
+  firstName: string;
+  lastName: string;
+  userName: string;
+  _id: string;
+}
 
 export async function addUserNameToFriendList(req: Request, res: Response) {
-  const { toUserName } = req.body;
-  if (!toUserName) {
+  const { friendRequestsBody ,friendUsername}:{friendRequestsBody:IfriendRequestsBody,friendUsername:string} = req.body;
+  console.log(req.body);
+  if (!friendRequestsBody) {
     return res.status(400).send("Please provide Enough Data!");
   }
 
   const requestSentToTheUser = await User.findOneAndUpdate(
-    { userName: toUserName },
+    {userName: friendUsername},
     { $addToSet: { friendsRequests: req.user.userId } }, // prevents duplicates
     { new: true }
   );
@@ -173,7 +177,7 @@ export async function addUserNameToFriendList(req: Request, res: Response) {
     return res.status(400).send("User Doesn't Exists!!");
   }
   const io = req.app.get("io") as Server;
-  io.to(toUserName).emit("receivedRequest", req.user.userName);
+  io.to(requestSentToTheUser.id).emit("receivedRequest", friendRequestsBody);
   res.send("Request Sent");
 }
 
@@ -225,9 +229,9 @@ export async function acceptFriendRequest(req: Request, res: Response) {
         _id: updatedRequestUser._id,
         online: updatedRequestUser.status,
       };
-      const socket = req.app.get("io") as Server;
-      socket
-        .to(updatedRequestUser.userName)
+      const io = req.app.get("io") as Server;
+      io
+        .to(String(updatedRequestUser._id))
         .emit("acceptedFriendRequest", req.user.userName);
       return res.status(200).json(responseJson);
     }
