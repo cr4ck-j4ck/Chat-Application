@@ -4,8 +4,11 @@ import { useState, useRef, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import SplitText from "@/components/Chat/SplitText";
 import { Link } from "react-router-dom";
 import { Toaster } from "@/components/ui/sonner";
+import useCommunicationStore, { type IMessage } from "@/Store/communcation.store";
+import { useSearchParams } from "react-router-dom";
 import {
   Dialog,
   DialogContent,
@@ -17,6 +20,7 @@ import useGlobalStore from "@/Store/global.store";
 import useUserStore, { type Ifriends } from "@/Store/user.store";
 import { Textarea } from "@/components/ui/textarea";
 import { sendFriendRequest } from "@/Services/user.api";
+
 import {
   Search,
   Send,
@@ -36,98 +40,19 @@ import {
   Users,
 } from "lucide-react";
 import ChatItem, { type Chat } from "@/components/Chat/ChatItem";
+import { useShallow } from "zustand/react/shallow";
 
-interface Message {
-  id: string;
-  sender: string;
-  content: string;
-  timestamp: string;
-  isOwn: boolean;
+
+interface CommanInSelectedChat {
+  userName?: string;
+  firstName?: string;
+  lastName?: string;
+  conversationName?: string;
 }
-
-const mockChats: Chat[] = [
-  {
-    _id: "1",
-    firstName: "Sarah",
-    lastName: "Jhonson",
-    avatar: "/diverse-woman-portrait.png",
-    lastMessage: "Hey! How are you doing today?",
-    timestamp: "2 min ago",
-    unreadCount: 3,
-    isOnline: true,
-    isPinned: true,
-    isMuted: false,
-    type: "direct",
-  },
-  {
-    _id: "2",
-    firstName: "Team Alpha",
-    lastName: "Alpha",
-    avatar: "/diverse-professional-team.png",
-    lastMessage: "Meeting at 3 PM today",
-    timestamp: "15 min ago",
-    unreadCount: 0,
-    isOnline: false,
-    isPinned: false,
-    isMuted: false,
-    type: "group",
-  },
-  {
-    _id: "3",
-    firstName: "Alex",
-    lastName: "Chen",
-    avatar: "/thoughtful-man.png",
-    lastMessage: "Thanks for the help!",
-    timestamp: "1 hour ago",
-    unreadCount: 0,
-    isOnline: true,
-    isPinned: false,
-    isMuted: true,
-    type: "direct",
-  },
-  {
-    _id: "4",
-    firstName: "Design",
-    lastName: "Team",
-    avatar: "/abstract-design-elements.png",
-    lastMessage: "New mockups are ready",
-    timestamp: "2 hours ago",
-    unreadCount: 7,
-    isOnline: false,
-    isPinned: false,
-    isMuted: false,
-    type: "group",
-  },
-];
-
-const mockMessages: Message[] = [
-  {
-    id: "1",
-    sender: "Sarah Johnson",
-    content: "Hey! How are you doing today?",
-    timestamp: "2:30 PM",
-    isOwn: false,
-  },
-  {
-    id: "2",
-    sender: "You",
-    content: "I'm doing great! Just working on the new chat interface.",
-    timestamp: "2:32 PM",
-    isOwn: true,
-  },
-  {
-    id: "3",
-    sender: "Sarah Johnson",
-    content: "That sounds exciting! Can't wait to see it.",
-    timestamp: "2:33 PM",
-    isOwn: false,
-  },
-];
+type TselectedChat = (Chat | Ifriends) & CommanInSelectedChat;
 
 export default function ChatPage() {
-  const [selectedChat, setSelectedChat] = useState<Chat | Ifriends | null>(
-    null
-  );
+  const [selectedChat, setSelectedChat] = useState<TselectedChat | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [newMessage, setNewMessage] = useState("");
   const [contextMenu, setContextMenu] = useState<{
@@ -137,11 +62,14 @@ export default function ChatPage() {
   } | null>(null);
   const [isAddFriendOpen, setIsAddFriendOpen] = useState(false);
   const [friendUsername, setFriendUsername] = useState("");
-  const [chats, setChats] = useState(mockChats);
-  const [messages, setMessages] = useState(mockMessages);
+  const [chats, setChats] = useState<Chat[]>([]);
+  const {message , setMessage} = useCommunicationStore(useShallow(state => ({messages:state.messages , })));
+  
   const user = useUserStore((state) => state.user);
   const contextMenuRef = useRef<HTMLDivElement>(null);
+  const [searchParams, setSearchParams] = useSearchParams();
   const socket = useGlobalStore((state) => state.socket);
+  const idParameter = searchParams.get("id");
   let filteredFriends: Ifriends[] = [];
   // Close context menu when clicking outside
   useEffect(() => {
@@ -155,17 +83,40 @@ export default function ChatPage() {
     };
 
     document.addEventListener("mousedown", handleClickOutside);
+    setSearchParams.apply("id");
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
+  useEffect(() => {
+    if (user && idParameter) {
+      setSelectedChat(
+        user.friends.find((el) => el._id === idParameter) as TselectedChat
+      );
+    }
+  }, [idParameter]);
+  const conversationStartingMsgs = [
+    "And here it begins… a brand-new vibe, a brand-new chat. Make your move 😏",
+    "Your story with this person is still unwritten… ready to write the first line? 😉",
+    "This could be the start of something fun… type your first message 👇",
+    "Two strangers. One chat box. Infinite possibilities 😍",
+    "Every great story starts with a hello… ready to send yours?",
+    "Your next favorite conversation is about to begin. Don't keep them waiting 😉",
+  ];
+  let randomConvoStartingMsg: string =
+    "And here it begins… a brand-new vibe, a brand-new chat. Make your move 😏";
+  useEffect(() => {
+    randomConvoStartingMsg =
+      conversationStartingMsgs[
+        Math.floor(Math.random() * conversationStartingMsgs.length)
+      ];
+  }, []);
 
+  if (!user) {
+    return;
+  }
   const filteredChats: Chat[] = chats.filter((chat) =>
-    chat.firstName
-      .concat(" ", chat.lastName)
-      .toLowerCase()
-      .includes(searchQuery.toLowerCase())
+    chat.conversationName.toLowerCase().includes(searchQuery.toLowerCase())
   );
-  if (user) {
-    console.log(user.friends);
+  if (user && searchQuery) {
     filteredFriends = user.friends.filter((friend) =>
       friend.firstName
         .concat(" ", friend.lastName)
@@ -188,7 +139,10 @@ export default function ChatPage() {
         if (chat._id === chatId) {
           switch (action) {
             case "pin":
-              return { ...chat, isPinned: !chat.isPinned };
+              return {
+                ...chat,
+                isPinned: chat.isPinned,
+              };
             case "mute":
               return { ...chat, isMuted: !chat.isMuted };
             case "delete":
@@ -202,20 +156,27 @@ export default function ChatPage() {
     );
     setContextMenu(null);
   };
-
+  interface IackData {
+    tempId:string;
+    messageId:string;
+  }
   const handleSendMessage = () => {
-    if (newMessage.trim() && selectedChat) {
-      const message: Message = {
-        id: Date.now().toString(),
-        sender: "You",
+    if (newMessage.trim() && selectedChat && socket && user) {
+      const message: IMessage = {
+        _id: Date.now().toString(),
+        senderId: user._id,
         content: newMessage,
-        timestamp: new Date().toLocaleTimeString([], {
-          hour: "2-digit",
-          minute: "2-digit",
-        }),
-        isOwn: true,
+        timestamp: new Date(),
+        conversationId: Date.now().toString(),
+        type: "text",
       };
-      setMessages((prev) => [...prev, message]);
+      socket.emit(
+        "send_msg",
+        { ...message, userName: selectedChat.userName },
+        (ackData:IackData) => {
+          console.log(ackData);
+         }
+      );
       setNewMessage("");
     }
   };
@@ -225,10 +186,16 @@ export default function ChatPage() {
   const handleAddFriend = async () => {
     if (friendUsername.trim() && socket) {
       // Simulate sending friend request
-      if (user?.userName === friendUsername) {
+      if (user.userName === friendUsername) {
         return toast.error("Abe sale Khud ko kon Request bhejta hai!!");
       }
-      const response = await sendFriendRequest(friendUsername);
+      console.log(user._id, user.firstName, user.lastName, user.userName);
+      const response = await sendFriendRequest({
+        _id: user._id,
+        firstName: user.firstName,
+        lastName: user.lastName,
+        userName: user.userName,
+      },friendUsername);
       if (response === "Request Sent") {
         toast(`Sent Request to ${friendUsername}`);
         setFriendUsername("");
@@ -314,57 +281,38 @@ export default function ChatPage() {
 
         {/* Chat List */}
         <div className="flex-1 overflow-y-auto">
-          <div className="p-2">
-            {/* Pinned Chats */}
-            {filteredChats.filter((chat) => chat.isPinned).length > 0 && (
+          {filteredChats.length > 0 || filteredFriends.length > 0 ? (
+            <div className="p-2">
+              {/* Pinned Chats */}
+              {filteredChats.length > 0 &&
+                filteredChats.filter((chat) => chat.isPinned).length > 0 && (
+                  <div className="mb-4">
+                    <div className="px-2 py-1 text-xs font-semibold text-muted-foreground uppercase tracking-wide flex items-center">
+                      <Pin className="h-3 w-3 mr-1" />
+                      Pinned
+                    </div>
+                    {filteredChats
+                      .filter((chat) => chat.isPinned)
+                      .map((chat) => (
+                        <ChatItem
+                          key={chat._id}
+                          chat={chat}
+                          isSelected={selectedChat?._id === chat._id}
+                          onClick={() => setSelectedChat(chat)}
+                          onRightClick={(e) => handleRightClick(e, chat?._id)}
+                        />
+                      ))}
+                  </div>
+                )}
+
+              {/* Regular Chats */}
               <div className="mb-4">
                 <div className="px-2 py-1 text-xs font-semibold text-muted-foreground uppercase tracking-wide flex items-center">
-                  <Pin className="h-3 w-3 mr-1" />
-                  Pinned
+                  <MessageCircle className="h-3 w-3 mr-1" />
+                  Direct Messages
                 </div>
                 {filteredChats
-                  .filter((chat) => chat.isPinned)
-                  .map((chat) => (
-                    <ChatItem
-                      key={chat._id}
-                      chat={chat}
-                      isSelected={selectedChat?._id === chat._id}
-                      onClick={() => setSelectedChat(chat)}
-                      onRightClick={(e) => handleRightClick(e, chat?._id)}
-                    />
-                  ))}
-              </div>
-            )}
-
-            {/* Regular Chats */}
-            <div className="mb-4">
-              <div className="px-2 py-1 text-xs font-semibold text-muted-foreground uppercase tracking-wide flex items-center">
-                <MessageCircle className="h-3 w-3 mr-1" />
-                Direct Messages
-              </div>
-              {filteredChats
-                .filter((chat) => !chat.isPinned && chat.type === "direct")
-                .map((chat) => (
-                  <ChatItem
-                    key={chat._id}
-                    chat={chat}
-                    isSelected={selectedChat?._id === chat._id}
-                    onClick={() => setSelectedChat(chat)}
-                    onRightClick={(e) => handleRightClick(e, chat._id)}
-                  />
-                ))}
-            </div>
-
-            {/* Group Chats */}
-            {filteredChats.filter((chat) => chat.type === "group").length >
-              0 && (
-              <div>
-                <div className="px-2 py-1 text-xs font-semibold text-muted-foreground uppercase tracking-wide flex items-center">
-                  <Users className="h-3 w-3 mr-1" />
-                  Groups
-                </div>
-                {filteredChats
-                  .filter((chat) => !chat.isPinned && chat.type === "group")
+                  .filter((chat) => chat.type === "direct" && !chat.isPinned)
                   .map((chat) => (
                     <ChatItem
                       key={chat._id}
@@ -375,18 +323,49 @@ export default function ChatPage() {
                     />
                   ))}
               </div>
-            )}
-            {searchQuery.length > 0 &&
-              filteredFriends.map((friend) => (
-                <ChatItem
-                  key={friend._id}
-                  isSelected={selectedChat?._id === friend._id}
-                  onClick={() => setSelectedChat(friend)}
-                  chat={friend}
-                  onRightClick={(e) => handleRightClick(e, friend._id)}
-                />
-              ))}
-          </div>
+
+              {/* Group Chats */}
+              {filteredChats.length > 0 &&
+                filteredChats.filter((chat) => chat.type === "group").length >
+                  0 && (
+                  <div>
+                    <div className="px-2 py-1 text-xs font-semibold text-muted-foreground uppercase tracking-wide flex items-center">
+                      <Users className="h-3 w-3 mr-1" />
+                      Groups
+                    </div>
+                    {filteredChats
+                      .filter((chat) => chat.type === "group" && chat.isPinned)
+                      .map((chat) => (
+                        <ChatItem
+                          key={chat._id}
+                          chat={chat}
+                          isSelected={selectedChat?._id === chat._id}
+                          onClick={() => setSelectedChat(chat)}
+                          onRightClick={(e) => handleRightClick(e, chat._id)}
+                        />
+                      ))}
+                  </div>
+                )}
+              {searchQuery.length > 0 &&
+                filteredFriends.map((friend) => (
+                  <ChatItem
+                    key={friend._id}
+                    isSelected={selectedChat?._id === friend._id}
+                    onClick={() => setSelectedChat(friend)}
+                    chat={friend}
+                    onRightClick={(e) => handleRightClick(e, friend._id)}
+                  />
+                ))}
+            </div>
+          ) : (
+            <div className="p-2">
+              <h1 className="StoryScript text-4xl text-center text-[#77ad6c] leading-20">
+                You Haven't Started Using{" "}
+                <strong className="text-green-800">Gufta-Gu</strong>, Go and
+                Start conversation with Your Friends. . .
+              </h1>
+            </div>
+          )}
         </div>
       </div>
 
@@ -403,19 +382,27 @@ export default function ChatPage() {
                       src={selectedChat.avatar || "/placeholder.svg"}
                     />
                     <AvatarFallback>
-                      {selectedChat.firstName[0].concat(
-                        selectedChat.lastName[0]
-                      )}
+                      {selectedChat.firstName
+                        ? selectedChat.firstName[0].concat(
+                            selectedChat.lastName
+                              ? selectedChat.lastName[0]
+                              : ""
+                          )
+                        : selectedChat.conversationName
+                        ? selectedChat.conversationName[0]
+                        : ""}
                     </AvatarFallback>
                   </Avatar>
                   <div>
                     <h2 className="font-semibold text-card-foreground">
-                      {selectedChat.firstName.concat(
-                        " ",
-                        selectedChat.lastName
-                      )}
+                      {selectedChat.firstName
+                        ? selectedChat.firstName.concat(
+                            " ",
+                            selectedChat.lastName ? selectedChat.lastName : ""
+                          )
+                        : selectedChat.conversationName}
                     </h2>
-                    // TODO
+                    {/* // TODO */}
                     {/* <p className="text-sm text-muted-foreground">
                       {selectedChat.
                         ? "Online"
@@ -439,33 +426,46 @@ export default function ChatPage() {
 
             {/* Messages */}
             <div className="flex-1 overflow-y-auto p-4 space-y-4">
-              {messages.map((message) => (
-                <div
-                  key={message.id}
-                  className={`flex ${
-                    message.isOwn ? "justify-end" : "justify-start"
-                  } animate-fade-in-up`}
-                >
+              {messages.length > 0 ? (
+                messages.map((message) => (
                   <div
-                    className={`max-w-xs lg:max-w-md px-4 py-2 rounded-lg ${
-                      message.isOwn
-                        ? "bg-primary text-primary-foreground"
-                        : "bg-card text-card-foreground border border-border"
-                    }`}
+                    key={message._id}
+                    className={`flex ${
+                      message.senderId === user?._id
+                        ? "justify-end"
+                        : "justify-start"
+                    } animate-fade-in-up`}
                   >
-                    <p className="text-sm">{message.content}</p>
-                    <p
-                      className={`text-xs mt-1 ${
-                        message.isOwn
-                          ? "text-primary-foreground/70"
-                          : "text-muted-foreground"
+                    <div
+                      className={`max-w-xs lg:max-w-md px-4 py-2 rounded-lg ${
+                        message.senderId === user?._id
+                          ? "bg-primary text-primary-foreground"
+                          : "bg-card text-card-foreground border border-border"
                       }`}
                     >
-                      {message.timestamp}
-                    </p>
+                      <p className="text-sm">{message.content}</p>
+                      <p
+                        className={`text-xs mt-1 ${
+                          message.senderId === user?._id
+                            ? "text-primary-foreground/70"
+                            : "text-muted-foreground"
+                        }`}
+                      >
+                        {message.timestamp.toString()}
+                      </p>
+                    </div>
                   </div>
+                ))
+              ) : (
+                <div className="relative top-46 max-w-xl mx-auto">
+                  <SplitText
+                    threshold={0.3}
+                    text={randomConvoStartingMsg} // stable value
+                    className="py-7 font-semibold text-5xl SiriVennela text-[#2e6d1d]"
+                    delay={100}
+                  />
                 </div>
-              ))}
+              )}
             </div>
 
             {/* Message Input */}
