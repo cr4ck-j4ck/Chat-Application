@@ -37,3 +37,16 @@ export interface IpopulatedUser extends IUser{
   blockedUsers:IUser[];
   Chats:Chat[];
 }
+
+export interface IsentMessage{
+  userName:string;
+  participants:{
+    userId:string
+  }[] | {userId:string},
+  conversationId: Types.ObjectId; // Reference to the Chat/Conversation
+  senderId: Types.ObjectId; // Reference to User who sent it
+  content: string; // The message text (or JSON for richer types)
+  type: "text" | "image" | "file" | "system"; // For extensibility (e.g., future media support)
+  readBy: Types.ObjectId[]; // Array of users who have read this message
+  createdAt: Date; // Timestamp for sorting and display
+}
