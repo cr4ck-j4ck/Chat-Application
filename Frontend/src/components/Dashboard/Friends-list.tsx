@@ -9,7 +9,6 @@ import { Search, UserMinus, Pin, VolumeX, Check, X, Clock } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   acceptFriendRequest,
-  updateFriendList,
   rejectFriendRequest,
   removeFriend,
 } from "@/Services/user.api";
@@ -17,17 +16,22 @@ import { type IfriendRequests } from "@/Store/user.store";
 import useGlobalStore from "@/Store/global.store";
 import useUserStore from "@/Store/user.store";
 import { useShallow } from "zustand/react/shallow";
+import { useNavigate } from "react-router-dom";
 
 export function FriendsList() {
   const [query, setQuery] = useState("");
-  const [friendsRequest, setFriendsRequest] = useState<
-    IfriendRequests[] | null
-  >(null);
   const socket = useGlobalStore((state) => state.socket);
-  const { user, setFriends } = useUserStore(
-    useShallow((state) => ({ user: state.user, setFriends: state.setFriends }))
-  );
-
+  const { user, setFriends, friendsRequests, addFriendsRequests, removeFriendRequests } =
+    useUserStore(
+      useShallow((state) => ({
+        user: state.user,
+        setFriends: state.setFriends,
+        addFriendsRequests: state.addFriendRequests,
+        friendsRequests: state.user?.friendsRequests,
+        removeFriendRequests: state.removeFriendRequests,
+      }))
+    );
+  const navigate = useNavigate();
   const filtered = useMemo(() => {
     if (user && user.friends.length > 0) {
       const q = query.toLowerCase().trim();
@@ -43,9 +47,9 @@ export function FriendsList() {
   useEffect(() => {
     if (!socket) return;
 
-    const handleReceivedRequest = (userName: string) => {
-      updateFriendList(setFriendsRequest, setFriends);
-      toast(`You Got Request from ${userName}`);
+    const handleReceivedRequest = (receivedRequestBody:IfriendRequests) => {
+      addFriendsRequests(receivedRequestBody);
+      toast(`You Got Request from ${receivedRequestBody.userName}`);
     };
 
     socket.on("receivedRequest", handleReceivedRequest);
@@ -59,17 +63,17 @@ export function FriendsList() {
   const acceptTheFriendRequest = async (id: string) => {
     const res = await acceptFriendRequest(id);
     setFriends(res);
-    setFriendsRequest((state) => (state ?? []).filter((el) => el._id != id));
+    removeFriendRequests(res._id);
     toast("Friend Request Accepted SuccessFully!!");
   };
 
   const handleRemoveFriend = async (id: string) => {
     if (user) {
       const res = await removeFriend(id);
-      if(res === "Friend Removed SuccessFully!!"){
-        setFriends(user.friends.filter((el) => el._id != id));        
+      if (res === "Friend Removed SuccessFully!!") {
+        setFriends(user.friends.filter((el) => el._id != id));
         toast(res);
-      }else{
+      } else {
         toast(res);
       }
     } else {
@@ -79,8 +83,7 @@ export function FriendsList() {
 
   const handleRejectRequest = async (id: string) => {
     const res = await rejectFriendRequest(id);
-    setFriendsRequest((state) => (state ?? []).filter((el) => el._id !== id));
-
+    removeFriendRequests(id);
     toast(res);
   };
 
@@ -114,7 +117,7 @@ export function FriendsList() {
             </div>
           </CardHeader>
 
-          {friendsRequest && (
+          {friendsRequests && (
             <div className="px-6">
               <div className="mb-2 flex items-center justify-between">
                 <div className="flex items-center gap-2">
@@ -122,7 +125,7 @@ export function FriendsList() {
                   <span className="text-sm font-medium">
                     Pending Requests
                     <span className="ml-1 rounded-full bg-primary/10 px-2 py-0.5 text-xs text-primary">
-                      {friendsRequest.length}
+                      {friendsRequests.length}
                     </span>
                   </span>
                 </div>
@@ -133,7 +136,7 @@ export function FriendsList() {
 
               <div className="mb-4 space-y-2">
                 <AnimatePresence initial={false}>
-                  {friendsRequest.map((user) => (
+                  {friendsRequests.map((user) => (
                     <motion.div
                       key={user.userName}
                       initial={{ opacity: 0, y: 8, scale: 0.98 }}
@@ -255,6 +258,34 @@ export function FriendsList() {
                     </div>
 
                     <div className="flex items-center gap-1 opacity-100 transition group-hover:opacity-100">
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        aria-label="Chatting"
+                        onClick={() => navigate(`/chat?id=${f._id}`)}
+                        title="Chatting"
+                      >
+                        <svg
+                          xmlns="http://www.w3.org/2000/svg"
+                          viewBox="0 0 24 24"
+                          fill="none"
+                        >
+                          <path
+                            d="M4.75195 3.75H19.252C20.3565 3.75 21.252 4.64543 21.252 5.75V16.25C21.252 17.3546 20.3565 18.25 19.252 18.25H12.002L7.00195 21V18.25H4.75195C3.64738 18.25 2.75195 17.3546 2.75195 16.25V5.75C2.75195 4.64543 3.64738 3.75 4.75195 3.75Z"
+                            stroke="black"
+                            strokeWidth="1.5"
+                            strokeLinecap="square"
+                            strokeLinejoin="round"
+                          />
+                          <path
+                            d="M6.75 11C6.75 11.4142 7.08579 11.75 7.5 11.75C7.91421 11.75 8.25 11.4142 8.25 11C8.25 10.5858 7.91421 10.25 7.5 10.25C7.08579 10.25 6.75 10.5858 6.75 11ZM11.25 11C11.25 11.4142 11.5858 11.75 12 11.75C12.4142 11.75 12.75 11.4142 12.75 11C12.75 10.5858 12.4142 10.25 12 10.25C11.5858 10.25 11.25 10.5858 11.25 11ZM15.75 11C15.75 11.4142 16.0858 11.75 16.5 11.75C16.9142 11.75 17.25 11.4142 17.25 11C17.25 10.5858 16.9142 10.25 16.5 10.25C16.0858 10.25 15.75 10.5858 15.75 11Z"
+                            fill="black"
+                            stroke="black"
+                            strokeWidth="0.5"
+                            strokeLinecap="square"
+                          />
+                        </svg>
+                      </Button>
                       <Button
                         variant="ghost"
                         size="icon"

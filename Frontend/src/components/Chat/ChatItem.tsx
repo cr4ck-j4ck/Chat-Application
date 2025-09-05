@@ -1,21 +1,35 @@
+// @ts-check
+
 import { AvatarFallback, Avatar, AvatarImage } from "@radix-ui/react-avatar";
 import { Pin, Users, VolumeX } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { type Ifriends } from "@/Store/user.store";
 
-export interface Chat {
-  _id: string;
-  firstName: string;
-  lastName: string;
-  lastMessage: string;
-  timestamp: string;
-  avatar: string;
-  unreadCount: number;
-  isOnline: boolean;
-  isPinned: boolean;
-  isMuted: boolean;
-  type: "direct" | "group";
+interface IunreadCount {
+  unreadUserId: string;
+  count: number;
 }
+
+interface Iparticipants {
+  userId: string;
+}
+
+export interface Chat {
+  _id:string;
+  type: "direct" | "group";
+  conversationName: string;
+  participants: Iparticipants[]; // User references
+  avatar: string;
+  lastMessage: {
+    content: string;
+    senderId: string;
+  };
+  isMuted:boolean;
+  isPinned:boolean;
+  createdAt: Date;
+  unreadCount:number
+}
+
 interface ChatItemProps {
   chat: Chat | Ifriends;
   isSelected: boolean;

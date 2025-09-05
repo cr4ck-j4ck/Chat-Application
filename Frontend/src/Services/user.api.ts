@@ -70,12 +70,12 @@ export const isUserNameAvalable = async (
 };
 
 export const sendFriendRequest = async (
-  toUserName: string
+  userDataForRequests: IfriendRequests,friendUsername:string
 ): Promise<string> => {
   try {
     const res = await axios.post(
       `${BackendURL}/user/friendRequest`,
-      { toUserName },
+      { friendRequestsBody : userDataForRequests,friendUsername },
       { withCredentials: true }
     );
     if (res.data === "Request Sent") {
@@ -141,20 +141,3 @@ export const removeFriend = async (id: string):Promise<string> => {
   }
 };
 
-export function updateFriendList(
-  setFriendsRequest: React.Dispatch<
-    React.SetStateAction<IfriendRequests[] | null>
-  >,
-  setFriends: (toUpdate: Ifriends | Ifriends[]) => void
-) {
-  fetchFriendList().then((response) => {
-    if (!(response instanceof Error)) {
-      if (response.friendRequestList) {
-        setFriendsRequest(response.friendRequestList);
-      }
-      if (response.friends) {
-        setFriends(response.friends);
-      }
-    }
-  });
-}
