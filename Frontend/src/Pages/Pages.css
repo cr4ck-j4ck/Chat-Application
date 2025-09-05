@@ -1,5 +1,4 @@
-@import url('https://fonts.googleapis.com/css2?family=Caveat:wght@400..700&family=Cormorant+Garamond:ital,wght@0,300..700;1,300..700&family=Sirivennela&display=swap');
-
+@import url('https://fonts.googleapis.com/css2?family=Caveat:wght@400..700&family=Cormorant+Garamond:ital,wght@0,300..700;1,300..700&family=Sirivennela&family=Story+Script&display=swap');
 
 .caveatFont {
     font-family: "Caveat", cursive;
@@ -11,4 +10,7 @@
 
 .SiriVennela{
     font-family: "Sirivennela", sans-serif;
+}
+.StoryScript{
+  font-family: "Story Script", sans-serif;
 }
