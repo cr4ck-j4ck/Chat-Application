@@ -89,6 +89,7 @@ export function FriendsList() {
 
   return (
     <>
+    {user?._id}
       <Toaster></Toaster>
       <motion.div
         initial={{ opacity: 0, y: 12 }}
