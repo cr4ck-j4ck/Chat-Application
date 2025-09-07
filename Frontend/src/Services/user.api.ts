@@ -4,6 +4,7 @@ import type {
   IfriendRequests,
   Ifriends,
 } from "@/Store/user.store";
+import type { IMessage } from "@/Store/communcation.store";
 const BackendURL = import.meta.env.VITE_BACKEND_URL;
 interface IuserData {
   firstName: string;
@@ -138,6 +139,36 @@ export const removeFriend = async (id: string):Promise<string> => {
       return err.response?.data;
     }
     return "Error while Removing the Friend!!";
+  }
+};
+
+import type { IConversation } from "@/Types/conversation.types";
+
+export const fetchUserConversations = async (): Promise<IConversation[]> => {
+  try {
+    const res = await axios.get(`${BackendURL}/user/conversations`, {
+      withCredentials: true
+    });
+    return res.data;
+  } catch (err) {
+    if (err instanceof AxiosError) {
+      throw new Error(err.response?.data || "Failed to fetch conversations");
+    }
+    throw new Error("Failed to fetch conversations");
+  }
+};
+
+export const fetchConversationMessages = async (conversationId: string): Promise<IMessage[]> => {
+  try {
+    const res = await axios.get(`${BackendURL}/user/conversations/${conversationId}/messages`, {
+      withCredentials: true
+    });
+    return res.data;
+  } catch (err) {
+    if (err instanceof AxiosError) {
+      throw new Error(err.response?.data || "Failed to fetch messages");
+    }
+    throw new Error("Failed to fetch messages");
   }
 };
 
