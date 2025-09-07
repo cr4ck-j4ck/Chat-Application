@@ -280,3 +280,112 @@ export async function removeFriend(req: Request, res: Response) {
   );
   res.send("Friend Removed SuccessFully!!");
 }
+
+// Search users by name or username (exclude self)
+export async function searchUsers(req: Request, res: Response) {
+  const q = (req.query.q as string) || "";
+  const userId = req.user?.userId;
+  if (!q) return res.status(400).send("Query required");
+  const regex = new RegExp(q, "i");
+  const users = await User.find(
+    {
+      $or: [{ firstName: regex }, { lastName: regex }, { userName: regex }, { email: regex }],
+      _id: { $ne: userId },
+    },
+    "firstName lastName userName avatar"
+  ).lean();
+  res.json(users);
+}
+
+import { Conversation } from "../models/conversation.model";
+import { Message } from "../models/message.model";
+
+export async function getUserConversations(req: Request, res: Response) {
+  try {
+    const userId = req.user?.userId;
+    if (!userId) return res.status(401).send("Please login");
+
+    const conversations = await Conversation.find({ 
+      "participants.userId": userId 
+    })
+    .populate('participants.userId', 'firstName lastName userName avatar status')
+    .sort({ updatedAt: -1 })
+    .lean();
+
+    const formattedConversations = await Promise.all(conversations.map(async (conv) => {
+      // For direct chats, we need to format them for the frontend
+      if (conv.type === "direct") {
+        // Find the other participant (not the current user)
+        const otherParticipant = conv.participants.find(p => 
+          p.userId && p.userId._id && p.userId._id.toString() !== userId
+        );
+        if (!otherParticipant?.userId) return null;
+
+        // Get current user's participant info for this conversation
+        const currentUserParticipant = conv.participants.find(p => 
+          p.userId && p.userId._id && p.userId._id.toString() === userId
+        );
+
+        const receiver = otherParticipant.userId;
+        
+        return {
+          _id: conv._id.toString(),
+          type: "direct" as const,
+          participants: conv.participants.map(p => ({
+            ...p,
+            userId: p.userId._id.toString()
+          })),
+          lastMessage: conv.lastMessage ? {
+            content: conv.lastMessage.content,
+            senderId: conv.lastMessage.senderId.toString(),
+            timestamp: conv.updatedAt
+          } : undefined,
+          createdAt: conv.createdAt,
+          updatedAt: conv.updatedAt,
+          receiverUserName: receiver.userName,
+          receiverId: receiver._id.toString(),
+          avatar: receiver.avatar,
+          isOnline: receiver.status === 'online',
+          isMuted: currentUserParticipant?.isMuted || false,
+          isPinned: currentUserParticipant?.isPinned || false,
+          unreadCount: currentUserParticipant?.unreadCount || 0
+        };
+      }
+      
+      // For group chats, just clean up the IDs
+      return {
+        ...conv,
+        _id: conv._id.toString(),
+        participants: conv.participants.map(p => ({
+          ...p,
+          userId: p.userId._id.toString()
+        })),
+        lastMessage: conv.lastMessage ? {
+          ...conv.lastMessage,
+          senderId: conv.lastMessage.senderId.toString()
+        } : undefined
+      };
+    }));
+
+    // Remove nulls and sort by pinned and date
+    const validConversations = formattedConversations
+      .filter((conv): conv is NonNullable<typeof conv> => conv !== null)
+      .sort((a, b) => {
+        if (a.isPinned && !b.isPinned) return -1;
+        if (!a.isPinned && b.isPinned) return 1;
+        return new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime();
+      });
+
+    res.json(validConversations);
+  } catch (error) {
+    console.error('Error fetching conversations:', error);
+    res.status(500).json({ message: "Error fetching conversations" });
+  }
+}
+
+export async function getConversationMessages(req: Request, res: Response) {
+  const convoId = req.params.id;
+  if (!convoId) return res.status(400).send("Conversation id required");
+  const messages = await Message.find({ conversationId: convoId }).sort({ createdAt: 1 }).lean();
+  res.json(messages);
+}

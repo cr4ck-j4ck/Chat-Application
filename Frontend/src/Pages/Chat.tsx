@@ -1,76 +1,108 @@
 import type React from "react";
-import { toast } from "sonner";
-import { useState, useRef, useEffect } from "react";
+import { toast, Toaster } from "sonner";
+import { useState, useRef, useEffect, useMemo } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import SplitText from "@/components/Chat/SplitText";
-import { Link } from "react-router-dom";
-import { Toaster } from "@/components/ui/sonner";
-import useCommunicationStore, { type IMessage } from "@/Store/communcation.store";
-import { useSearchParams } from "react-router-dom";
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-} from "@/components/ui/dialog";
+import { useNavigate, useSearchParams } from "react-router-dom";
+import { sendDirectMessage } from "@/Services/sendMessage.socket";
+import useCommunicationStore from "@/Store/communcation.store";
 import useGlobalStore from "@/Store/global.store";
 import useUserStore, { type Ifriends } from "@/Store/user.store";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Textarea } from "@/components/ui/textarea";
 import { sendFriendRequest } from "@/Services/user.api";
-
-import {
-  Search,
-  Send,
-  Smile,
-  Paperclip,
-  Pin,
-  VolumeX,
-  Trash2,
-  UserPlus,
-  Filter,
-  UserRoundPen,
-  Phone,
-  Video,
-  Info,
-  Archive,
-  MessageCircle,
-  Users,
-} from "lucide-react";
-import ChatItem, { type Chat } from "@/components/Chat/ChatItem";
+import { Search, Send, Smile, Paperclip, Pin } from "lucide-react";
+import { type IgroupChat, type IdirectChat } from "@/components/Chat/ChatItem";
 import { useShallow } from "zustand/react/shallow";
+import { type IMessage } from "@/Store/communcation.store";
+import { fetchUserConversations, fetchConversationMessages } from "@/Services/user.api";
 
+type ChatUnion = IgroupChat | IdirectChat | Ifriends;
 
-interface CommanInSelectedChat {
-  userName?: string;
-  firstName?: string;
-  lastName?: string;
-  conversationName?: string;
-}
-type TselectedChat = (Chat | Ifriends) & CommanInSelectedChat;
+const isFriendChat = (chat: ChatUnion): chat is Ifriends => {
+  return 'firstName' in chat;
+};
 
-export default function ChatPage() {
-  const [selectedChat, setSelectedChat] = useState<TselectedChat | null>(null);
+const isGroupChat = (chat: ChatUnion): chat is IgroupChat => {
+  return 'type' in chat && chat.type === 'group' && 'conversationName' in chat;
+};
+
+const isDirectChat = (chat: ChatUnion): chat is IdirectChat => {
+  return 'type' in chat && chat.type === 'direct' && 'receiverId' in chat;
+};
+
+const getDisplayInitials = (chat: ChatUnion): string => {
+  if (isFriendChat(chat)) {
+    if (chat.firstName && chat.lastName) {
+      return `${chat.firstName[0]}${chat.lastName[0]}`;
+    } else if (chat.firstName) {
+      return chat.firstName.substring(0, 2).toUpperCase();
+    } else if (chat.userName) {
+      return chat.userName.substring(0, 2).toUpperCase();
+    }
+    return '??';
+  } else if (isGroupChat(chat)) {
+    return chat.conversationName ? 
+      chat.conversationName.substring(0, 2).toUpperCase() : 
+      'GC';
+  } else {
+    return chat.receiverUserName ? 
+      chat.receiverUserName.substring(0, 2).toUpperCase() :
+      '??';
+  }
+};
+
+const getDisplayName = (chat: ChatUnion): string => {
+  if (isFriendChat(chat)) {
+    return chat.firstName ? 
+      chat.firstName + (chat.lastName ? ' ' + chat.lastName : '') :
+      chat.userName;
+  } else if (isGroupChat(chat)) {
+    return chat.conversationName;
+  } else {
+    return chat.receiverUserName;
+  }
+};
+
+const ChatPage: React.FC = () => {
+  const navigate = useNavigate();
+  const [selectedChat, setSelectedChat] = useState<ChatUnion | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [newMessage, setNewMessage] = useState("");
   const [contextMenu, setContextMenu] = useState<{
     x: number;
     y: number;
     chatId: string;
+    chatType: "group" | "direct";
   } | null>(null);
   const [isAddFriendOpen, setIsAddFriendOpen] = useState(false);
   const [friendUsername, setFriendUsername] = useState("");
-  const [chats, setChats] = useState<Chat[]>([]);
-  const {message , setMessage} = useCommunicationStore(useShallow(state => ({messages:state.messages , })));
   
+  const {
+    messages,
+    directConversations,
+    pinConversations,
+    setDirectConversations,
+    setMessages,
+    appendMessage
+  } = useCommunicationStore(
+    useShallow((state) => ({
+      messages: state.messages,
+      directConversations: state.directConversations,
+      pinConversations: state.pinConversation,
+      setDirectConversations: state.setDirectConversations,
+      setMessages: state.setMessages,
+      appendMessage: state.appendMessage
+    }))
+  );
   const user = useUserStore((state) => state.user);
   const contextMenuRef = useRef<HTMLDivElement>(null);
-  const [searchParams, setSearchParams] = useSearchParams();
+  const searchParams = useSearchParams()[0];
   const socket = useGlobalStore((state) => state.socket);
   const idParameter = searchParams.get("id");
   let filteredFriends: Ifriends[] = [];
+  
   // Close context menu when clicking outside
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -83,439 +115,541 @@ export default function ChatPage() {
     };
 
     document.addEventListener("mousedown", handleClickOutside);
-    setSearchParams.apply("id");
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
+
+  // Fetch conversations when component mounts
   useEffect(() => {
-    if (user && idParameter) {
-      setSelectedChat(
-        user.friends.find((el) => el._id === idParameter) as TselectedChat
-      );
-    }
-  }, [idParameter]);
-  const conversationStartingMsgs = [
+    if (!user) return;
+
+    const fetchConversations = async () => {
+      try {
+        const conversations = await fetchUserConversations();
+        const directConvos = conversations
+          .filter(c => c.type === "direct")
+          .map(c => {
+            const otherParticipantData = c.participants.find(p => {
+              const userId = typeof p.userId === 'string' ? p.userId : p.userId._id;
+              return userId !== user._id;
+            });
+            const userParticipantData = c.participants.find(p => {
+              const userId = typeof p.userId === 'string' ? p.userId : p.userId._id;
+              return userId === user._id;
+            });
+            
+            if (!otherParticipantData || !userParticipantData) return null;
+
+            // Convert participant to expected type
+            const otherParticipant = {
+              userId: typeof otherParticipantData.userId === 'string' ? 
+                otherParticipantData.userId : 
+                otherParticipantData.userId._id,
+              isMuted: otherParticipantData.isMuted,
+              isPinned: otherParticipantData.isPinned,
+              unreadCount: otherParticipantData.unreadCount
+            };
+
+            const userParticipant = {
+              userId: typeof userParticipantData.userId === 'string' ? 
+                userParticipantData.userId : 
+                userParticipantData.userId._id,
+              isMuted: userParticipantData.isMuted,
+              isPinned: userParticipantData.isPinned,
+              unreadCount: userParticipantData.unreadCount
+            };
+
+            const otherUserData = typeof otherParticipantData.userId === 'string' ? null : otherParticipantData.userId;
+
+            return {
+              _id: c._id,
+              type: "direct" as const,
+              participants: [otherParticipant, userParticipant],
+              lastMessage: c.lastMessage ? {
+                content: c.lastMessage.content,
+                senderId: c.lastMessage.senderId,
+                timestamp: c.updatedAt
+              } : undefined,
+              createdAt: c.createdAt,
+              updatedAt: c.updatedAt,
+              receiverUserName: otherUserData?.userName || "",
+              receiverId: typeof otherParticipantData.userId === 'string' ? 
+                otherParticipantData.userId : 
+                otherParticipantData.userId._id,
+              avatar: otherUserData?.avatar,
+              isOnline: false, // Will be updated through socket
+              isMuted: userParticipant.isMuted,
+              isPinned: userParticipant.isPinned,
+              unreadCount: userParticipant.unreadCount
+            };
+          })
+          .filter((c): c is NonNullable<typeof c> => c !== null);
+
+        setDirectConversations(directConvos);
+        
+        // If there's an ID parameter, select that conversation
+        if (idParameter) {
+          const selectedConvo = directConvos.find(c => c._id === idParameter || c.receiverId === idParameter);
+          if (selectedConvo) {
+            setSelectedChat(selectedConvo);
+          } else {
+            // Check if it's a friend we haven't chatted with yet
+            const friend = user.friends.find(f => f._id === idParameter);
+            if (friend) {
+              setSelectedChat(friend);
+            }
+          }
+        }
+      } catch (error) {
+        console.error("Failed to fetch conversations:", error);
+        toast.error("Failed to fetch conversations");
+      }
+    };
+
+    fetchConversations();
+  }, [user, idParameter, setDirectConversations]);
+
+  // Handle real-time updates and notifications
+  useEffect(() => {
+    if (!socket || !user) return;
+
+    const handleNewMessage = (data: IMessage) => {
+      // Update messages if the chat is currently selected
+      if (selectedChat && 
+        ((isDirectChat(selectedChat) && selectedChat._id === data.conversationId) ||
+         (isFriendChat(selectedChat) && selectedChat._id === data.senderId))
+      ) {
+        appendMessage(data);
+      } else {
+        // Show notification if not in the current chat
+        const sender = directConversations.find(c => 
+          c._id === data.conversationId || c.receiverId === data.senderId
+        );
+        if (sender) {
+          toast(`New message from ${sender.receiverUserName}`, {
+            description: data.content,
+            action: {
+              label: "View",
+              onClick: () => setSelectedChat(sender)
+            }
+          });
+        }
+
+        // Update conversation list to show latest message
+        const updatedConvos = directConversations.map(conv => {
+          if (conv._id === data.conversationId || conv.receiverId === data.senderId) {
+            return {
+              ...conv,
+              lastMessage: {
+                content: data.content,
+                senderId: data.senderId,
+                timestamp: new Date().toISOString()
+              },
+              unreadCount: conv.unreadCount + 1
+            };
+          }
+          return conv;
+        });
+
+        // Sort conversations by latest message
+        const sortedConvos = [...updatedConvos].sort((a, b) => {
+          if (a.isPinned && !b.isPinned) return -1;
+          if (!a.isPinned && b.isPinned) return 1;
+          const aTime = a.lastMessage?.timestamp || new Date().toISOString();
+          const bTime = b.lastMessage?.timestamp || new Date().toISOString();
+          return new Date(bTime).getTime() - new Date(aTime).getTime();
+        });
+
+        setDirectConversations(sortedConvos);
+      }
+    };
+
+    socket.on("receive_message", handleNewMessage);
+    return () => {
+      socket.off("receive_message", handleNewMessage);
+    };
+  }, [socket, user, selectedChat, directConversations, appendMessage, setDirectConversations, setSelectedChat]);
+
+  // Load messages when chat is selected
+  useEffect(() => {
+    if (!selectedChat) return;
+
+    const loadMessages = async () => {
+      try {
+        let conversationId: string;
+        if (isDirectChat(selectedChat)) {
+          conversationId = selectedChat._id;
+        } else if (isFriendChat(selectedChat)) {
+          // Check if we have a conversation with this friend
+          const existingConvo = directConversations.find(
+            c => c.receiverId === selectedChat._id
+          );
+          if (!existingConvo) return; // No messages yet
+          conversationId = existingConvo._id;
+        } else {
+          // Group chat
+          conversationId = selectedChat._id;
+        }
+
+        const messages = await fetchConversationMessages(conversationId);
+        setMessages(messages);
+      } catch (error) {
+        console.error("Failed to load messages:", error);
+        toast.error("Failed to load messages");
+      }
+    };
+
+    loadMessages();
+  }, [selectedChat, directConversations, setMessages]);
+
+  const conversationStartingMsgs = useMemo(() => [
     "And here it begins… a brand-new vibe, a brand-new chat. Make your move 😏",
     "Your story with this person is still unwritten… ready to write the first line? 😉",
     "This could be the start of something fun… type your first message 👇",
     "Two strangers. One chat box. Infinite possibilities 😍",
     "Every great story starts with a hello… ready to send yours?",
     "Your next favorite conversation is about to begin. Don't keep them waiting 😉",
-  ];
-  let randomConvoStartingMsg: string =
-    "And here it begins… a brand-new vibe, a brand-new chat. Make your move 😏";
+  ], []);
+
+  const randomConvoStartingMsgRef = useRef<string>(
+    "And here it begins… a brand-new vibe, a brand-new chat. Make your move 😏"
+  );
   useEffect(() => {
-    randomConvoStartingMsg =
+    randomConvoStartingMsgRef.current =
       conversationStartingMsgs[
         Math.floor(Math.random() * conversationStartingMsgs.length)
       ];
-  }, []);
+  }, [conversationStartingMsgs]);
 
   if (!user) {
-    return;
+    return null;
   }
-  const filteredChats: Chat[] = chats.filter((chat) =>
-    chat.conversationName.toLowerCase().includes(searchQuery.toLowerCase())
-  );
-  if (user && searchQuery) {
+
+  const handleSendMessage = async () => {
+    const trimmedMessage = newMessage.trim();
+    if (!trimmedMessage || !selectedChat || !socket || !user) {
+      if (!socket) toast.error("Connection lost. Please refresh the page.");
+      if (!user) toast.error("Please log in to send messages.");
+      if (!selectedChat) toast.error("Please select a chat first.");
+      return;
+    }
+
+    try {
+      type SendPayload = { content: string; senderId: string; receiverId?: string; conversationId?: string; type?: "text" | "image" | "file" | "system" };
+      const payload: SendPayload = { content: trimmedMessage, senderId: user._id, type: "text" };
+
+      if (isFriendChat(selectedChat)) {
+        payload.receiverId = selectedChat._id;
+      } else if (isDirectChat(selectedChat) || isGroupChat(selectedChat)) {
+        payload.conversationId = selectedChat._id;
+      }
+
+      const [err, message, conversation] = await sendDirectMessage(payload, socket);
+      if (err) return toast.error(err.message || String(err));
+
+      // If server returned a conversation (new convo created), add to store and select it
+      if (conversation) {
+        const receiverId = isFriendChat(selectedChat) ? 
+          selectedChat._id : 
+          (isDirectChat(selectedChat) ? selectedChat.receiverId : selectedChat._id);
+        
+        const receiverName = isFriendChat(selectedChat) ? 
+          selectedChat.userName : 
+          (isDirectChat(selectedChat) ? selectedChat.receiverUserName : "");
+
+        const directConv: IdirectChat = {
+          _id: String(conversation._id),
+          avatar: conversation.avatar || "",
+          lastMessage: {
+            content: newMessage,
+            senderId: user._id,
+            timestamp: new Date().toISOString(),
+          },
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+          isMuted: false,
+          isPinned: false,
+          unreadCount: 0,
+          type: "direct" as const,
+          participants: [
+            {
+              userId: user._id,
+              isMuted: false,
+              isPinned: false,
+              unreadCount: 0,
+              _id: String(conversation._id) + "_" + user._id
+            },
+            {
+              userId: receiverId,
+              isMuted: false,
+              isPinned: false,
+              unreadCount: 0,
+              _id: String(conversation._id) + "_" + receiverId
+            }
+          ],
+          receiverId,
+          receiverUserName: receiverName,
+        };
+
+        // Add conversation to store
+        useCommunicationStore.getState().addDirectConversations(directConv);
+        setSelectedChat(directConv);
+      }
+
+      if (message) {
+        useCommunicationStore.getState().setMessages(message);
+        setNewMessage("");
+      }
+    } catch {
+      toast.error("Failed to send message. Please try again.");
+    }
+  };
+
+  // Filter conversations based on search query
+  if (searchQuery) {
     filteredFriends = user.friends.filter((friend) =>
-      friend.firstName
-        .concat(" ", friend.lastName)
+      // hide friend if direct conversation already exists with them
+      !directConversations.some((dc) => dc.receiverId === friend._id) &&
+      (friend.firstName || "")
+        .concat(" ", friend.lastName || "")
         .toLowerCase()
         .includes(searchQuery.toLowerCase())
     );
   }
-  const handleRightClick = (e: React.MouseEvent, chatId: string) => {
+
+  const handleRightClick = (
+    e: React.MouseEvent,
+    chatId: string,
+    chatType: "group" | "direct"
+  ) => {
     e.preventDefault();
     setContextMenu({
       x: e.clientX,
       y: e.clientY,
       chatId,
+      chatType,
     });
   };
 
-  const handleContextAction = (action: string, chatId: string) => {
-    setChats((prevChats) =>
-      prevChats.map((chat) => {
-        if (chat._id === chatId) {
-          switch (action) {
-            case "pin":
-              return {
-                ...chat,
-                isPinned: chat.isPinned,
-              };
-            case "mute":
-              return { ...chat, isMuted: !chat.isMuted };
-            case "delete":
-              return chat; // In real app, would remove from list
-            default:
-              return chat;
-          }
-        }
-        return chat;
-      })
-    );
+  const handlePin = () => {
+    if (!contextMenu) return;
+    pinConversations(contextMenu.chatId, contextMenu.chatType);
     setContextMenu(null);
-  };
-  interface IackData {
-    tempId:string;
-    messageId:string;
-  }
-  const handleSendMessage = () => {
-    if (newMessage.trim() && selectedChat && socket && user) {
-      const message: IMessage = {
-        _id: Date.now().toString(),
-        senderId: user._id,
-        content: newMessage,
-        timestamp: new Date(),
-        conversationId: Date.now().toString(),
-        type: "text",
-      };
-      socket.emit(
-        "send_msg",
-        { ...message, userName: selectedChat.userName },
-        (ackData:IackData) => {
-          console.log(ackData);
-         }
-      );
-      setNewMessage("");
-    }
-  };
-  function truncateText(text: string, maxLength: number = 50): string {
-    return text.length > maxLength ? text.slice(0, maxLength) + "..." : text;
-  }
-  const handleAddFriend = async () => {
-    if (friendUsername.trim() && socket) {
-      // Simulate sending friend request
-      if (user.userName === friendUsername) {
-        return toast.error("Abe sale Khud ko kon Request bhejta hai!!");
-      }
-      console.log(user._id, user.firstName, user.lastName, user.userName);
-      const response = await sendFriendRequest({
-        _id: user._id,
-        firstName: user.firstName,
-        lastName: user.lastName,
-        userName: user.userName,
-      },friendUsername);
-      if (response === "Request Sent") {
-        toast(`Sent Request to ${friendUsername}`);
-        setFriendUsername("");
-        setIsAddFriendOpen(false);
-      } else {
-        toast.error(truncateText(response as string, 50));
-      }
-    }
   };
 
   return (
-    <div className="flex h-screen bg-background">
-      {/* Sidebar */}
-      <Toaster></Toaster>
-      <div className="w-80 bg-sidebar border-r border-sidebar-border flex flex-col animate-slide-in-left">
-        {/* Header */}
-        <div className="p-4 border-b border-sidebar-border">
-          <div className="flex items-center justify-between mb-4">
-            <h1 className="text-xl font-bold text-sidebar-foreground">
-              Gufta-Gu
-            </h1>
-
-            <Link to={"/profile"}>
-              <UserRoundPen className="h-4 w-4" />
-            </Link>
-          </div>
-
-          {/* Search Bar */}
-          <div className="relative">
-            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground h-4 w-4" />
+    <div className="flex h-screen">
+      <div className="w-1/4 border-r bg-background overflow-y-auto">
+        {/* Search Input and Profile Button */}
+        <div className="p-4 border-b flex items-center justify-between">
+          <div className="relative flex-1 mr-2">
+            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground" />
             <Input
-              placeholder="Search conversations to start with.."
+              placeholder="Search chats..."
+              className="pl-10"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="pl-10 bg-input border-border"
             />
           </div>
-        </div>
-
-        {/* Action Buttons */}
-        <div className="p-4 border-b border-sidebar-border">
-          <div className="flex gap-2">
-            <Dialog open={isAddFriendOpen} onOpenChange={setIsAddFriendOpen}>
-              <DialogTrigger asChild>
-                <Button
-                  size="sm"
-                  className="flex-1 bg-primary hover:bg-primary/90 text-primary-foreground"
-                >
-                  <UserPlus className="h-4 w-4 mr-2" />
-                  Add Friend
-                </Button>
-              </DialogTrigger>
-              <DialogContent className="animate-fade-in-up">
-                <DialogHeader>
-                  <DialogTitle>Add New Friend</DialogTitle>
-                </DialogHeader>
-                <div className="space-y-4">
-                  <Input
-                    placeholder="Enter friend's UserName"
-                    value={friendUsername}
-                    onChange={(e) => setFriendUsername(e.target.value)}
-                    className="bg-input"
-                  />
-                  <Button
-                    onClick={handleAddFriend}
-                    className="w-full bg-primary hover:bg-primary/90"
-                  >
-                    Send Request
-                  </Button>
-                </div>
-              </DialogContent>
-            </Dialog>
-
-            <Button
-              size="sm"
-              variant="outline"
-              className="border-border bg-transparent"
-            >
-              <Filter className="h-4 w-4" />
-            </Button>
-          </div>
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={() => navigate("/profile")}
+            className="shrink-0"
+          >
+            <Avatar className="h-8 w-8">
+              <AvatarImage src={user.avatar} />
+              <AvatarFallback>
+                {user.firstName?.[0]}
+                {user.lastName?.[0]}
+              </AvatarFallback>
+            </Avatar>
+          </Button>
         </div>
 
         {/* Chat List */}
-        <div className="flex-1 overflow-y-auto">
-          {filteredChats.length > 0 || filteredFriends.length > 0 ? (
+        <div className="space-y-2">
+          {/* Friend Suggestions */}
+          {searchQuery && filteredFriends.length > 0 && (
             <div className="p-2">
-              {/* Pinned Chats */}
-              {filteredChats.length > 0 &&
-                filteredChats.filter((chat) => chat.isPinned).length > 0 && (
-                  <div className="mb-4">
-                    <div className="px-2 py-1 text-xs font-semibold text-muted-foreground uppercase tracking-wide flex items-center">
-                      <Pin className="h-3 w-3 mr-1" />
-                      Pinned
-                    </div>
-                    {filteredChats
-                      .filter((chat) => chat.isPinned)
-                      .map((chat) => (
-                        <ChatItem
-                          key={chat._id}
-                          chat={chat}
-                          isSelected={selectedChat?._id === chat._id}
-                          onClick={() => setSelectedChat(chat)}
-                          onRightClick={(e) => handleRightClick(e, chat?._id)}
-                        />
-                      ))}
+              <h3 className="text-sm font-medium mb-2">Suggested Friends</h3>
+              {filteredFriends.map((friend) => (
+                <div
+                  key={friend._id}
+                  className="flex items-center gap-3 p-3 hover:bg-accent cursor-pointer border-b relative"
+                  onClick={() => setSelectedChat(friend)}
+                >
+                  <Avatar>
+                    <AvatarImage src={friend.avatar} />
+                    <AvatarFallback>
+                      {friend.firstName?.[0]}
+                      {friend.lastName?.[0]}
+                    </AvatarFallback>
+                  </Avatar>
+                  <div className="flex-1 min-w-0">
+                    <p className="font-medium">
+                      {friend.firstName} {friend.lastName}
+                    </p>
+                    <p className="text-sm text-muted-foreground">
+                      {friend.userName}
+                    </p>
                   </div>
-                )}
-
-              {/* Regular Chats */}
-              <div className="mb-4">
-                <div className="px-2 py-1 text-xs font-semibold text-muted-foreground uppercase tracking-wide flex items-center">
-                  <MessageCircle className="h-3 w-3 mr-1" />
-                  Direct Messages
                 </div>
-                {filteredChats
-                  .filter((chat) => chat.type === "direct" && !chat.isPinned)
-                  .map((chat) => (
-                    <ChatItem
-                      key={chat._id}
-                      chat={chat}
-                      isSelected={selectedChat?._id === chat._id}
-                      onClick={() => setSelectedChat(chat)}
-                      onRightClick={(e) => handleRightClick(e, chat._id)}
-                    />
-                  ))}
-              </div>
-
-              {/* Group Chats */}
-              {filteredChats.length > 0 &&
-                filteredChats.filter((chat) => chat.type === "group").length >
-                  0 && (
-                  <div>
-                    <div className="px-2 py-1 text-xs font-semibold text-muted-foreground uppercase tracking-wide flex items-center">
-                      <Users className="h-3 w-3 mr-1" />
-                      Groups
-                    </div>
-                    {filteredChats
-                      .filter((chat) => chat.type === "group" && chat.isPinned)
-                      .map((chat) => (
-                        <ChatItem
-                          key={chat._id}
-                          chat={chat}
-                          isSelected={selectedChat?._id === chat._id}
-                          onClick={() => setSelectedChat(chat)}
-                          onRightClick={(e) => handleRightClick(e, chat._id)}
-                        />
-                      ))}
-                  </div>
-                )}
-              {searchQuery.length > 0 &&
-                filteredFriends.map((friend) => (
-                  <ChatItem
-                    key={friend._id}
-                    isSelected={selectedChat?._id === friend._id}
-                    onClick={() => setSelectedChat(friend)}
-                    chat={friend}
-                    onRightClick={(e) => handleRightClick(e, friend._id)}
-                  />
-                ))}
-            </div>
-          ) : (
-            <div className="p-2">
-              <h1 className="StoryScript text-4xl text-center text-[#77ad6c] leading-20">
-                You Haven't Started Using{" "}
-                <strong className="text-green-800">Gufta-Gu</strong>, Go and
-                Start conversation with Your Friends. . .
-              </h1>
+              ))}
             </div>
           )}
+
+          {/* Direct Conversations */}
+          <div>
+            <h3 className="text-sm font-medium p-2">Chats</h3>
+            {directConversations
+              .filter(chat => 
+                !searchQuery || 
+                chat.receiverUserName.toLowerCase().includes(searchQuery.toLowerCase())
+              )
+              .sort((a, b) => (b.isPinned ? 1 : 0) - (a.isPinned ? 1 : 0))
+              .map((chat) => (
+                <div
+                  key={chat._id}
+                  className={`flex items-center gap-3 p-3 hover:bg-accent cursor-pointer border-b relative ${
+                    selectedChat?._id === chat._id ? "bg-accent" : ""
+                  }`}
+                  onClick={() => setSelectedChat(chat)}
+                  onContextMenu={(e) => handleRightClick(e, chat._id, "direct")}
+                >
+                  <Avatar>
+                    <AvatarImage src={chat.avatar} />
+                    <AvatarFallback>
+                      {chat.receiverUserName[0]}
+                    </AvatarFallback>
+                  </Avatar>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex justify-between items-start">
+                      <p className="font-medium truncate">
+                        {chat.receiverUserName}
+                      </p>
+                      {chat.isPinned && (
+                        <Pin className="h-3 w-3 text-muted-foreground" />
+                      )}
+                    </div>
+                    <p className="text-sm text-muted-foreground truncate">
+                      {chat.lastMessage?.content || "No messages yet"}
+                    </p>
+                  </div>
+                  {chat.unreadCount > 0 && (
+                    <div className="absolute right-2 top-1/2 -translate-y-1/2">
+                      <div className="bg-primary text-primary-foreground rounded-full w-5 h-5 flex items-center justify-center text-xs">
+                        {chat.unreadCount}
+                      </div>
+                    </div>
+                  )}
+                </div>
+            ))}
+          </div>
         </div>
       </div>
 
-      {/* Main Chat Area */}
-      <div className="flex-1 flex flex-col animate-slide-in-right">
+      {/* Chat Area */}
+      <div className="flex-1 flex flex-col bg-background">
         {selectedChat ? (
           <>
             {/* Chat Header */}
-            <div className="p-4 border-b border-border bg-card">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center space-x-3">
-                  <Avatar className="h-10 w-10">
-                    <AvatarImage
-                      src={selectedChat.avatar || "/placeholder.svg"}
-                    />
-                    <AvatarFallback>
-                      {selectedChat.firstName
-                        ? selectedChat.firstName[0].concat(
-                            selectedChat.lastName
-                              ? selectedChat.lastName[0]
-                              : ""
-                          )
-                        : selectedChat.conversationName
-                        ? selectedChat.conversationName[0]
-                        : ""}
-                    </AvatarFallback>
-                  </Avatar>
-                  <div>
-                    <h2 className="font-semibold text-card-foreground">
-                      {selectedChat.firstName
-                        ? selectedChat.firstName.concat(
-                            " ",
-                            selectedChat.lastName ? selectedChat.lastName : ""
-                          )
-                        : selectedChat.conversationName}
-                    </h2>
-                    {/* // TODO */}
-                    {/* <p className="text-sm text-muted-foreground">
-                      {selectedChat.
-                        ? "Online"
-                        : "Last seen 2 hours ago"}
-                    </p> */}
-                  </div>
-                </div>
-                <div className="flex items-center space-x-2">
-                  <Button size="sm" variant="ghost">
-                    <Phone className="h-4 w-4" />
-                  </Button>
-                  <Button size="sm" variant="ghost">
-                    <Video className="h-4 w-4" />
-                  </Button>
-                  <Button size="sm" variant="ghost">
-                    <Info className="h-4 w-4" />
-                  </Button>
+            <div className="p-4 border-b flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <Avatar>
+                  <AvatarImage src={selectedChat.avatar} />
+                  <AvatarFallback>
+                    {getDisplayInitials(selectedChat)}
+                  </AvatarFallback>
+                </Avatar>
+                <div>
+                  <h2 className="font-medium">{getDisplayName(selectedChat)}</h2>
                 </div>
               </div>
             </div>
 
-            {/* Messages */}
+            {/* Chat Messages */}
             <div className="flex-1 overflow-y-auto p-4 space-y-4">
-              {messages.length > 0 ? (
-                messages.map((message) => (
+              {messages
+                .filter(msg => 
+                  isDirectChat(selectedChat) ? 
+                    msg.conversationId === selectedChat._id :
+                    isFriendChat(selectedChat) && false // No messages for new chats
+                )
+                .map((message) => (
                   <div
                     key={message._id}
                     className={`flex ${
-                      message.senderId === user?._id
-                        ? "justify-end"
-                        : "justify-start"
-                    } animate-fade-in-up`}
+                      message.senderId === user._id ? "justify-end" : "justify-start"
+                    }`}
                   >
                     <div
-                      className={`max-w-xs lg:max-w-md px-4 py-2 rounded-lg ${
-                        message.senderId === user?._id
+                      className={`max-w-[70%] break-words rounded-lg p-3 ${
+                        message.senderId === user._id
                           ? "bg-primary text-primary-foreground"
-                          : "bg-card text-card-foreground border border-border"
+                          : "bg-accent"
                       }`}
                     >
-                      <p className="text-sm">{message.content}</p>
-                      <p
-                        className={`text-xs mt-1 ${
-                          message.senderId === user?._id
-                            ? "text-primary-foreground/70"
-                            : "text-muted-foreground"
-                        }`}
-                      >
-                        {message.timestamp.toString()}
+                      <p>{message.content}</p>
+                      <p className="text-xs opacity-70 mt-1">
+                        {new Date(message.timestamp).toLocaleTimeString([], {
+                          hour: '2-digit',
+                          minute: '2-digit'
+                        })}
                       </p>
                     </div>
                   </div>
-                ))
-              ) : (
-                <div className="relative top-46 max-w-xl mx-auto">
-                  <SplitText
-                    threshold={0.3}
-                    text={randomConvoStartingMsg} // stable value
-                    className="py-7 font-semibold text-5xl SiriVennela text-[#2e6d1d]"
-                    delay={100}
-                  />
+                ))}
+              
+              {/* Show conversation starting message for new chats */}
+              {isFriendChat(selectedChat) && messages.length === 0 && (
+                <div className="text-center text-muted-foreground italic">
+                  {randomConvoStartingMsgRef.current}
                 </div>
               )}
             </div>
 
-            {/* Message Input */}
-            <div className="p-4 border-t border-border bg-card">
-              <div className="flex items-center space-x-2">
-                <Button size="sm" variant="ghost">
-                  <Paperclip className="h-4 w-4" />
+            {/* Chat Input */}
+            <div className="p-4 border-t">
+              <div className="flex items-center gap-2">
+                <Button variant="ghost" size="icon">
+                  <Paperclip className="h-5 w-5" />
                 </Button>
-                <div className="flex-1 relative">
-                  <Textarea
-                    placeholder="Type a message..."
-                    value={newMessage}
-                    onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) =>
-                      setNewMessage(e.target.value)
+                <Textarea
+                  value={newMessage}
+                  onChange={(e) => setNewMessage(e.target.value)}
+                  placeholder="Type a message..."
+                  className="resize-none"
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" && !e.shiftKey) {
+                      e.preventDefault();
+                      handleSendMessage();
                     }
-                    onKeyPress={(
-                      e: React.KeyboardEvent<HTMLTextAreaElement>
-                    ) => {
-                      if (e.key === "Enter" && !e.shiftKey) {
-                        e.preventDefault();
-                        handleSendMessage();
-                      }
-                    }}
-                    className="min-h-[40px] max-h-32 resize-none bg-input border-border"
-                  />
-                </div>
-                <Button size="sm" variant="ghost">
-                  <Smile className="h-4 w-4" />
+                  }}
+                />
+                <Button variant="ghost" size="icon">
+                  <Smile className="h-5 w-5" />
                 </Button>
                 <Button
-                  size="sm"
+                  variant="ghost"
+                  size="icon"
                   onClick={handleSendMessage}
                   disabled={!newMessage.trim()}
-                  className="bg-primary hover:bg-primary/90 text-primary-foreground"
                 >
-                  <Send className="h-4 w-4" />
+                  <Send className="h-5 w-5" />
                 </Button>
               </div>
             </div>
           </>
         ) : (
-          <div className="flex-1 flex items-center justify-center bg-muted/20">
-            <div className="text-center animate-fade-in-up">
-              <MessageCircle className="h-16 w-16 text-muted-foreground mx-auto mb-4" />
-              <h3 className="text-xl font-semibold text-foreground mb-2">
-                Welcome to Gufta-Gu
-              </h3>
-              <p className="text-muted-foreground">
-                Select a conversation to start chatting
+          <div className="flex-1 flex items-center justify-center text-center p-4">
+            <div>
+              <h2 className="text-2xl font-bold mb-2">Welcome to Chat</h2>
+              <p className="text-muted-foreground mb-4">
+                Select a chat to start messaging
               </p>
+              <Button onClick={() => setIsAddFriendOpen(true)}>
+                Start a new chat
+              </Button>
             </div>
           </div>
         )}
@@ -525,40 +659,66 @@ export default function ChatPage() {
       {contextMenu && (
         <div
           ref={contextMenuRef}
-          className="fixed bg-popover border border-border rounded-md shadow-lg py-2 z-50 animate-fade-in-up"
-          style={{ left: contextMenu.x, top: contextMenu.y }}
+          style={{
+            position: "fixed",
+            top: contextMenu.y,
+            left: contextMenu.x,
+          }}
+          className="bg-popover text-popover-foreground shadow-md rounded-md py-1 min-w-[160px] z-50"
         >
           <button
-            onClick={() => handleContextAction("pin", contextMenu.chatId)}
-            className="w-full px-4 py-2 text-left hover:bg-accent hover:text-accent-foreground flex items-center space-x-2"
+            onClick={handlePin}
+            className="w-full px-3 py-2 text-left hover:bg-accent hover:text-accent-foreground flex items-center gap-2"
           >
             <Pin className="h-4 w-4" />
-            <span>Pin Chat</span>
-          </button>
-          <button
-            onClick={() => handleContextAction("mute", contextMenu.chatId)}
-            className="w-full px-4 py-2 text-left hover:bg-accent hover:text-accent-foreground flex items-center space-x-2"
-          >
-            <VolumeX className="h-4 w-4" />
-            <span>Mute Chat</span>
-          </button>
-          <button
-            onClick={() => handleContextAction("archive", contextMenu.chatId)}
-            className="w-full px-4 py-2 text-left hover:bg-accent hover:text-accent-foreground flex items-center space-x-2"
-          >
-            <Archive className="h-4 w-4" />
-            <span>Archive</span>
-          </button>
-          <hr className="my-1 border-border" />
-          <button
-            onClick={() => handleContextAction("delete", contextMenu.chatId)}
-            className="w-full px-4 py-2 text-left hover:bg-destructive hover:text-destructive-foreground flex items-center space-x-2 text-destructive"
-          >
-            <Trash2 className="h-4 w-4" />
-            <span>Delete Chat</span>
+            Pin chat
           </button>
         </div>
       )}
+
+      {/* Add Friend Dialog */}
+      <Dialog open={isAddFriendOpen} onOpenChange={setIsAddFriendOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Add a new friend</DialogTitle>
+          </DialogHeader>
+          <form
+            onSubmit={async (e) => {
+              e.preventDefault();
+              try {
+                if (!user) {
+                  throw new Error("Please login first");
+                }
+                await sendFriendRequest({
+                  _id: user._id,
+                  firstName: user.firstName,
+                  lastName: user.lastName,
+                  userName: user.userName
+                }, friendUsername);
+                toast.success("Friend request sent!");
+                setIsAddFriendOpen(false);
+                setFriendUsername("");
+              } catch {
+                toast.error("Failed to add friend");
+              }
+            }}
+            className="space-y-4"
+          >
+            <Input
+              placeholder="Enter username..."
+              value={friendUsername}
+              onChange={(e) => setFriendUsername(e.target.value)}
+            />
+            <Button type="submit" disabled={!friendUsername.trim()}>
+              Send Friend Request
+            </Button>
+          </form>
+        </DialogContent>
+      </Dialog>
+
+      <Toaster />
     </div>
   );
-}
+};
+
+export default ChatPage;

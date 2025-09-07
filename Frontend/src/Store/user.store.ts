@@ -11,10 +11,13 @@ export interface Ifriends extends IfriendRequests {
   isOnline: boolean;
   isPinned: boolean;
   isMuted: boolean;
-  type: "Personal";
-  lastMessage?: string;
-  unreadCount: number;
-  timestamp: string;
+  unreadCount:number;
+  type: "direct";
+  lastMessage: {
+    content: string;
+    senderId: string;
+    timestamp:string;
+  };
 }
 export interface IresponseUser {
   _id: string;
