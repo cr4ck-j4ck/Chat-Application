@@ -5,7 +5,7 @@ import { connectDB } from "./DbConfig";
 import cookiesParser from "cookie-parser";
 import cors from "cors";
 import jwt from "jsonwebtoken";
-import { Server } from "socket.io";
+import { Server, Socket } from "socket.io";
 import { Request, Response, NextFunction } from "express";
 import { Message } from "./models/message.model";
 import { SocketData } from "./Types/socket";
@@ -47,7 +47,7 @@ const server = app.listen(Port, () => {
   console.log(`Started listening on Port ${Port}`);
 });
 
-const io = new Server<any, any, any, SocketData>(server, {
+const io = new Server(server, {
   cors: {
     origin: ["http://localhost:5173", "https://gufta-gu.vercel.app"],
     credentials: true,
@@ -81,46 +81,93 @@ io.use((socket, next) => {
 io.on("connection", (socket) => {
   socket.join(socket.data.user.userId);
   console.log(`A user Connected w ith userName ${socket.data.user.userName}`);
-  socket.on("send_message", async (data: IsentMessage) => {
-    // Save to DB
-    if (data.participants instanceof Array && !data.conversationId) {
-      return socket.emit("errorOfConvoMsg", "Please Provide conversation id ");
-    }
-  
-    if (!data.conversationId && !(data.participants instanceof Array) && data.userName) {
-      const newConvo = await Conversation.create({
-        participants: [data.senderId, data.participants.userId],
-        type: "direct",
-      });
-      await Message.create({
-        conversationId: newConvo._id,
-        senderId: data.senderId,
-        content: data.content,
-        type: "text",
-      });
-      const socks = await io.in(data.userName).fetchSockets();
-      socks.forEach(s => 
-        s.join(newConvo.id)
-      )
-      socket.join(newConvo.id);
-      return socket.to(newConvo.id).emit("receive_message", data.content);
-    }
-    const newMessage = await Message.create({
-      conversationId: data.conversationId,
-      sender: data.senderId,
-      content:data.content,
-      type:"text",
-    });
+  // send_message expects either { conversationId, senderId, content }
+  // or for direct messages: { senderId, receiverId, content }
+  socket.on("send_message", async (data: IsentMessage, callback: (response: unknown) => void) => {
+    try {
+      // basic validation
+      if (!data.content || !data.senderId) {
+        return callback?.({ ok: false, error: "Invalid message payload" });
+      }
 
-    // Update lastMessage in Chat
-    await Conversation.findByIdAndUpdate(data.conversationId, {
-      $set:{"lastMessage.content":data.content,"lastMessage.senderId":data.senderId}
-    });
-    // Emit to all users in the room
-    if(data.participants instanceof Array){
-      io.to(data.conversationId).emit("receive_message", newMessage);
-    }else{
-      io.to(data.participants.userId).emit("receive_message", newMessage)
+      // Direct message starting a new conversation
+      if (!data.conversationId && data.senderId && data.receiverId) {
+        // find existing direct conversation that contains both participants
+        const existingConv = await Conversation.findOne({
+          type: "direct",
+          $and: [
+            { "participants.userId": data.senderId },
+            { "participants.userId": data.receiverId },
+          ],
+        });
+
+        let convo = existingConv;
+        if (!existingConv) {
+          convo = await Conversation.create({
+            type: "direct",
+            participants: [
+              { userId: data.senderId },
+              { userId: data.receiverId },
+            ],
+          });
+        }
+
+        // convo is guaranteed to exist now
+  const convoId = String(((convo as { _id?: unknown })._id) ?? "");
+
+        const newMessage = await Message.create({
+          conversationId: convoId,
+          senderId: data.senderId,
+          content: data.content,
+          type: "text",
+        });
+
+        // update lastMessage
+        await Conversation.findByIdAndUpdate(convoId, {
+          $set: { "lastMessage.content": data.content, "lastMessage.senderId": data.senderId },
+        });
+
+        // emit new conversation event to both participants if it was created now
+        if (!existingConv) {
+          io.to(data.receiverId).emit("new_conversation", convo);
+          io.to(data.senderId).emit("new_conversation", convo);
+        }
+
+        // emit message to both users
+        io.to(data.receiverId).emit("receive_message", { ...newMessage.toObject(), conversationId: convoId });
+        io.to(data.senderId).emit("receive_message", { ...newMessage.toObject(), conversationId: convoId });
+
+        return callback?.({ ok: true, conversation: convo, message: newMessage });
+      }
+
+      // Message inside an existing conversation
+      if (data.conversationId) {
+        const newMessage = await Message.create({
+          conversationId: data.conversationId,
+          senderId: data.senderId,
+          content: data.content,
+          type: "text",
+        });
+
+        // Update lastMessage in Conversation
+        await Conversation.findByIdAndUpdate(data.conversationId, {
+          $set: { "lastMessage.content": data.content, "lastMessage.senderId": data.senderId },
+        });
+
+        // emit to room (conversationId) and also to sender/participants
+        io.to(String(data.conversationId)).emit("receive_message", newMessage);
+        // Also emit to sender's personal room to ensure their client gets it
+        io.to(data.senderId).emit("receive_message", newMessage);
+
+        return callback?.({ ok: true, message: newMessage });
+      }
+
+      return callback?.({ ok: false, error: "Unable to process message" });
+    } catch (err) {
+      console.error(err);
+      return callback?.({ ok: false, error: "Server error" });
     }
   });
+
+
 });
