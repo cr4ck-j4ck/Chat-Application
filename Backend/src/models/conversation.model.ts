@@ -1,8 +1,16 @@
 import { Schema, model, Document, Types } from "mongoose";
 
+interface IPopulatedUser {
+  _id: Types.ObjectId;
+  firstName: string;
+  lastName: string;
+  userName: string;
+  avatar?: string;
+  status: 'online' | 'offline' | 'away';
+}
 
 interface Iparticipants {
-  userId: Types.ObjectId;
+  userId: IPopulatedUser;
   isMuted: boolean;
   isPinned: boolean;
   unreadCount: number;
@@ -10,14 +18,15 @@ interface Iparticipants {
 
 interface Iconversation extends Document {
   type: "direct" | "group";
-  conversationName: string;
-  participants: Iparticipants[]; // User references
-  avatar: string;
-  lastMessage: {
+  conversationName?: string;
+  participants: Iparticipants[]; // User references with populated data
+  avatar?: string;
+  lastMessage?: {
     content: string;
     senderId: Types.ObjectId;
   };
   createdAt: Date;
+  updatedAt: Date;
 }
 
 const lastMessageSchema = new Schema(
