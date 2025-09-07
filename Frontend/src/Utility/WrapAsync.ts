@@ -1,14 +1,15 @@
 // AsyncWrapper.ts
-type AsyncFunction<T> = (...args: any[]) => Promise<T>;
+type AsyncFunction<T> = (...args: unknown[]) => Promise<T>;
 
 export async function wrapAsync<T>(
   fn: AsyncFunction<T>,
-  ...args: Parameters<typeof fn>
+  ...args: unknown[]
 ): Promise<[Error | null, T | null]> {
   try {
-    const data = await fn(...args);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const data = await fn(...(args as any));
     return [null, data];
   } catch (err) {
-    return [err as Error, null];
+    return [err instanceof Error ? err : new Error(String(err)), null];
   }
 }
