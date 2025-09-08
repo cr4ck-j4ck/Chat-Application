@@ -53,10 +53,16 @@ export const getUser = async (): Promise<IgetUser> => {
     });
     return [null, res.data];
   } catch (err) {
-    if (err instanceof AxiosError && err.response?.status === 401) {
-      return [new Error(err.response.data), null];
+    if (err instanceof AxiosError) {
+      if (err.response?.status === 401) {
+        // User is not authenticated - this is expected for new visitors
+        return [new Error("UNAUTHENTICATED"), null];
+      } else {
+        // Other server errors
+        return [new Error(err.response?.data || "Server error"), null];
+      }
     } else {
-      return [new Error("Error Occurred "), null];
+      return [new Error("Network error"), null];
     }
   }
 };
