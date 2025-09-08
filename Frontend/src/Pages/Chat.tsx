@@ -2,68 +2,82 @@ import type React from "react";
 import { toast, Toaster } from "sonner";
 import { useState, useRef, useEffect, useMemo } from "react";
 import { Button } from "@/components/ui/button";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { sendDirectMessage } from "@/Services/sendMessage.socket";
 import useCommunicationStore from "@/Store/communcation.store";
 import useGlobalStore from "@/Store/global.store";
-import useUserStore, { type Ifriends } from "@/Store/user.store";
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import useUserStore from "@/Store/user.store";
 import { Textarea } from "@/components/ui/textarea";
 import { sendFriendRequest } from "@/Services/user.api";
-import { Search, Send, Smile, Paperclip, Pin } from "lucide-react";
-import { type IgroupChat, type IdirectChat } from "@/components/Chat/ChatItem";
+import { Search, Send, Smile, Paperclip, Pin, UserPlus } from "lucide-react";
+import {
+  type ChatUnion,
+  type IDirectChat,
+  type IGroupChat,
+  type IFriend,
+  isDirectChat,
+  isGroupChat,
+  isFriendChat,
+  getChatDisplayName,
+  getChatAvatar,
+  getChatAvatarFallback
+} from "@/Types/chat.types";
 import { useShallow } from "zustand/react/shallow";
 import { type IMessage } from "@/Store/communcation.store";
 import { fetchUserConversations, fetchConversationMessages } from "@/Services/user.api";
+import LoadingSpinner from "@/components/LoadingSpinner";
+import { type IConversation } from "@/Types/conversation.types";
 
-type ChatUnion = IgroupChat | IdirectChat | Ifriends;
+// Helper function to convert IConversation to ChatUnion
+const convertConversationToChat = (conversation: IConversation): IDirectChat | IGroupChat => {
+  // Convert participants to proper format
+  const convertedParticipants = conversation.participants.map(p => ({
+    userId: typeof p.userId === 'string' ? p.userId : p.userId._id,
+    isMuted: p.isMuted,
+    isPinned: p.isPinned,
+    unreadCount: p.unreadCount,
+    _id: p._id
+  }));
 
-const isFriendChat = (chat: ChatUnion): chat is Ifriends => {
-  return 'firstName' in chat;
-};
-
-const isGroupChat = (chat: ChatUnion): chat is IgroupChat => {
-  return 'type' in chat && chat.type === 'group' && 'conversationName' in chat;
-};
-
-const isDirectChat = (chat: ChatUnion): chat is IdirectChat => {
-  return 'type' in chat && chat.type === 'direct' && 'receiverId' in chat;
-};
-
-const getDisplayInitials = (chat: ChatUnion): string => {
-  if (isFriendChat(chat)) {
-    if (chat.firstName && chat.lastName) {
-      return `${chat.firstName[0]}${chat.lastName[0]}`;
-    } else if (chat.firstName) {
-      return chat.firstName.substring(0, 2).toUpperCase();
-    } else if (chat.userName) {
-      return chat.userName.substring(0, 2).toUpperCase();
-    }
-    return '??';
-  } else if (isGroupChat(chat)) {
-    return chat.conversationName ? 
-      chat.conversationName.substring(0, 2).toUpperCase() : 
-      'GC';
+  if (conversation.type === "direct") {
+    return {
+      _id: conversation._id,
+      type: "direct" as const,
+      participants: convertedParticipants,
+      createdAt: conversation.createdAt,
+      updatedAt: conversation.updatedAt,
+      lastMessage: conversation.lastMessage,
+      avatar: conversation.avatar,
+      receiverId: conversation.receiverId || '',
+      receiverUserName: conversation.receiverUserName || '',
+      receiverFirstName: conversation.receiverFirstName,
+      receiverLastName: conversation.receiverLastName,
+      receiverAvatar: conversation.receiverAvatar,
+      isOnline: conversation.isOnline,
+      isMuted: conversation.isMuted || false,
+      isPinned: conversation.isPinned || false,
+      unreadCount: conversation.unreadCount || 0
+    };
   } else {
-    return chat.receiverUserName ? 
-      chat.receiverUserName.substring(0, 2).toUpperCase() :
-      '??';
+    return {
+      _id: conversation._id,
+      type: "group" as const,
+      participants: convertedParticipants,
+      createdAt: conversation.createdAt,
+      updatedAt: conversation.updatedAt,
+      lastMessage: conversation.lastMessage,
+      avatar: conversation.avatar,
+      conversationName: conversation.conversationName || '',
+      isMuted: conversation.isMuted || false,
+      isPinned: conversation.isPinned || false,
+      unreadCount: conversation.unreadCount || 0
+    };
   }
 };
 
-const getDisplayName = (chat: ChatUnion): string => {
-  if (isFriendChat(chat)) {
-    return chat.firstName ? 
-      chat.firstName + (chat.lastName ? ' ' + chat.lastName : '') :
-      chat.userName;
-  } else if (isGroupChat(chat)) {
-    return chat.conversationName;
-  } else {
-    return chat.receiverUserName;
-  }
-};
 
 const ChatPage: React.FC = () => {
   const navigate = useNavigate();
@@ -76,8 +90,11 @@ const ChatPage: React.FC = () => {
     chatId: string;
     chatType: "group" | "direct";
   } | null>(null);
+  const [addFriendUsername, setAddFriendUsername] = useState("");
   const [isAddFriendOpen, setIsAddFriendOpen] = useState(false);
-  const [friendUsername, setFriendUsername] = useState("");
+  const [isLoadingConversations, setIsLoadingConversations] = useState(false);
+  const [isLoadingMessages, setIsLoadingMessages] = useState(false);
+  const [isSendingMessage, setIsSendingMessage] = useState(false);
   
   const {
     messages,
@@ -101,7 +118,7 @@ const ChatPage: React.FC = () => {
   const searchParams = useSearchParams()[0];
   const socket = useGlobalStore((state) => state.socket);
   const idParameter = searchParams.get("id");
-  let filteredFriends: Ifriends[] = [];
+  let filteredFriends: IFriend[] = [];
   
   // Close context menu when clicking outside
   useEffect(() => {
@@ -124,84 +141,55 @@ const ChatPage: React.FC = () => {
 
     const fetchConversations = async () => {
       try {
+        setIsLoadingConversations(true);
         const conversations = await fetchUserConversations();
-        const directConvos = conversations
+        
+        console.log("Fetched conversations:", conversations);
+        
+        // The backend already returns properly formatted conversations
+        const directConvos = conversations.filter(c => c.type === "direct");
+        
+        console.log("Direct conversations:", directConvos);
+        
+        const convertedDirectConvos = directConvos
           .filter(c => c.type === "direct")
-          .map(c => {
-            const otherParticipantData = c.participants.find(p => {
-              const userId = typeof p.userId === 'string' ? p.userId : p.userId._id;
-              return userId !== user._id;
-            });
-            const userParticipantData = c.participants.find(p => {
-              const userId = typeof p.userId === 'string' ? p.userId : p.userId._id;
-              return userId === user._id;
-            });
-            
-            if (!otherParticipantData || !userParticipantData) return null;
-
-            // Convert participant to expected type
-            const otherParticipant = {
-              userId: typeof otherParticipantData.userId === 'string' ? 
-                otherParticipantData.userId : 
-                otherParticipantData.userId._id,
-              isMuted: otherParticipantData.isMuted,
-              isPinned: otherParticipantData.isPinned,
-              unreadCount: otherParticipantData.unreadCount
-            };
-
-            const userParticipant = {
-              userId: typeof userParticipantData.userId === 'string' ? 
-                userParticipantData.userId : 
-                userParticipantData.userId._id,
-              isMuted: userParticipantData.isMuted,
-              isPinned: userParticipantData.isPinned,
-              unreadCount: userParticipantData.unreadCount
-            };
-
-            const otherUserData = typeof otherParticipantData.userId === 'string' ? null : otherParticipantData.userId;
-
-            return {
-              _id: c._id,
-              type: "direct" as const,
-              participants: [otherParticipant, userParticipant],
-              lastMessage: c.lastMessage ? {
-                content: c.lastMessage.content,
-                senderId: c.lastMessage.senderId,
-                timestamp: c.updatedAt
-              } : undefined,
-              createdAt: c.createdAt,
-              updatedAt: c.updatedAt,
-              receiverUserName: otherUserData?.userName || "",
-              receiverId: typeof otherParticipantData.userId === 'string' ? 
-                otherParticipantData.userId : 
-                otherParticipantData.userId._id,
-              avatar: otherUserData?.avatar,
-              isOnline: false, // Will be updated through socket
-              isMuted: userParticipant.isMuted,
-              isPinned: userParticipant.isPinned,
-              unreadCount: userParticipant.unreadCount
-            };
-          })
-          .filter((c): c is NonNullable<typeof c> => c !== null);
-
-        setDirectConversations(directConvos);
+          .map(c => convertConversationToChat(c) as IDirectChat);
+        
+        setDirectConversations(convertedDirectConvos);
         
         // If there's an ID parameter, select that conversation
         if (idParameter) {
-          const selectedConvo = directConvos.find(c => c._id === idParameter || c.receiverId === idParameter);
+          const selectedConvo = directConvos.find(c =>
+            c._id === idParameter ||
+            (c.type === "direct" && c.receiverId === idParameter)
+          );
           if (selectedConvo) {
-            setSelectedChat(selectedConvo);
+            setSelectedChat(convertConversationToChat(selectedConvo));
           } else {
             // Check if it's a friend we haven't chatted with yet
             const friend = user.friends.find(f => f._id === idParameter);
             if (friend) {
-              setSelectedChat(friend);
+              const friendChat: IFriend = {
+                _id: friend._id,
+                firstName: friend.firstName,
+                lastName: friend.lastName,
+                userName: friend.userName,
+                avatar: friend.avatar,
+                isOnline: false,
+                isPinned: false,
+                isMuted: false,
+                unreadCount: 0,
+                type: "direct" as const
+              };
+              setSelectedChat(friendChat);
             }
           }
         }
       } catch (error) {
         console.error("Failed to fetch conversations:", error);
         toast.error("Failed to fetch conversations");
+      } finally {
+        setIsLoadingConversations(false);
       }
     };
 
@@ -213,53 +201,64 @@ const ChatPage: React.FC = () => {
     if (!socket || !user) return;
 
     const handleNewMessage = (data: IMessage) => {
-      // Update messages if the chat is currently selected
-      if (selectedChat && 
-        ((isDirectChat(selectedChat) && selectedChat._id === data.conversationId) ||
-         (isFriendChat(selectedChat) && selectedChat._id === data.senderId))
-      ) {
+      // Check if this message is for the currently selected chat
+      const isCurrentChat = selectedChat && (
+        (isDirectChat(selectedChat) && selectedChat._id === data.conversationId) ||
+        (isFriendChat(selectedChat) && directConversations.some(c =>
+          isDirectChat(c) && c.receiverId === selectedChat._id && c._id === data.conversationId
+        ))
+      );
+
+      if (isCurrentChat) {
+        // Add message to current chat
         appendMessage(data);
       } else {
-        // Show notification if not in the current chat
-        const sender = directConversations.find(c => 
-          c._id === data.conversationId || c.receiverId === data.senderId
+        // Show notification for new message from other chats
+        const senderConversation = directConversations.find(c =>
+          c._id === data.conversationId
         );
-        if (sender) {
-          toast(`New message from ${sender.receiverUserName}`, {
+        
+        if (senderConversation && data.senderId !== user._id) {
+          const senderName = isDirectChat(senderConversation)
+            ? senderConversation.receiverUserName ||
+              `${senderConversation.receiverFirstName || ''} ${senderConversation.receiverLastName || ''}`.trim()
+            : 'Someone';
+          
+          toast(`New message from ${senderName}`, {
             description: data.content,
             action: {
               label: "View",
-              onClick: () => setSelectedChat(sender)
+              onClick: () => setSelectedChat(senderConversation)
             }
           });
         }
 
-        // Update conversation list to show latest message
-        const updatedConvos = directConversations.map(conv => {
-          if (conv._id === data.conversationId || conv.receiverId === data.senderId) {
-            return {
-              ...conv,
-              lastMessage: {
-                content: data.content,
-                senderId: data.senderId,
-                timestamp: new Date().toISOString()
-              },
-              unreadCount: conv.unreadCount + 1
-            };
-          }
-          return conv;
-        });
+        // Update conversation list to show latest message using functional update
+        setDirectConversations(prevConversations => {
+          const updatedConvos = prevConversations.map(conv => {
+            if (conv._id === data.conversationId) {
+              return {
+                ...conv,
+                lastMessage: {
+                  content: data.content,
+                  senderId: data.senderId,
+                  timestamp: new Date().toISOString()
+                },
+                unreadCount: conv.unreadCount + (data.senderId !== user._id ? 1 : 0)
+              };
+            }
+            return conv;
+          });
 
-        // Sort conversations by latest message
-        const sortedConvos = [...updatedConvos].sort((a, b) => {
-          if (a.isPinned && !b.isPinned) return -1;
-          if (!a.isPinned && b.isPinned) return 1;
-          const aTime = a.lastMessage?.timestamp || new Date().toISOString();
-          const bTime = b.lastMessage?.timestamp || new Date().toISOString();
-          return new Date(bTime).getTime() - new Date(aTime).getTime();
+          // Sort conversations by latest message
+          return [...updatedConvos].sort((a, b) => {
+            if (a.isPinned && !b.isPinned) return -1;
+            if (!a.isPinned && b.isPinned) return 1;
+            const aTime = a.lastMessage?.timestamp || new Date().toISOString();
+            const bTime = b.lastMessage?.timestamp || new Date().toISOString();
+            return new Date(bTime).getTime() - new Date(aTime).getTime();
+          });
         });
-
-        setDirectConversations(sortedConvos);
       }
     };
 
@@ -267,23 +266,44 @@ const ChatPage: React.FC = () => {
     return () => {
       socket.off("receive_message", handleNewMessage);
     };
-  }, [socket, user, selectedChat, directConversations, appendMessage, setDirectConversations, setSelectedChat]);
+  }, [socket, user, selectedChat, appendMessage]);
 
   // Load messages when chat is selected
   useEffect(() => {
     if (!selectedChat) return;
 
+    // Clear unread count when chat is selected
+    if (isDirectChat(selectedChat)) {
+      setDirectConversations(prevConversations =>
+        prevConversations.map(conv => {
+          if (conv._id === selectedChat._id) {
+            return {
+              ...conv,
+              unreadCount: 0
+            };
+          }
+          return conv;
+        })
+      );
+    }
+
     const loadMessages = async () => {
       try {
+        setIsLoadingMessages(true);
         let conversationId: string;
+        
         if (isDirectChat(selectedChat)) {
           conversationId = selectedChat._id;
         } else if (isFriendChat(selectedChat)) {
           // Check if we have a conversation with this friend
           const existingConvo = directConversations.find(
-            c => c.receiverId === selectedChat._id
+            c => isDirectChat(c) && c.receiverId === selectedChat._id
           );
-          if (!existingConvo) return; // No messages yet
+          if (!existingConvo) {
+            // No conversation yet, clear messages
+            setMessages([]);
+            return;
+          }
           conversationId = existingConvo._id;
         } else {
           // Group chat
@@ -295,11 +315,14 @@ const ChatPage: React.FC = () => {
       } catch (error) {
         console.error("Failed to load messages:", error);
         toast.error("Failed to load messages");
+        setMessages([]);
+      } finally {
+        setIsLoadingMessages(false);
       }
     };
 
     loadMessages();
-  }, [selectedChat, directConversations, setMessages]);
+  }, [selectedChat]);
 
   const conversationStartingMsgs = useMemo(() => [
     "And here it begins… a brand-new vibe, a brand-new chat. Make your move 😏",
@@ -334,33 +357,41 @@ const ChatPage: React.FC = () => {
     }
 
     try {
+      setIsSendingMessage(true);
       type SendPayload = { content: string; senderId: string; receiverId?: string; conversationId?: string; type?: "text" | "image" | "file" | "system" };
       const payload: SendPayload = { content: trimmedMessage, senderId: user._id, type: "text" };
 
       if (isFriendChat(selectedChat)) {
-        payload.receiverId = selectedChat._id;
-      } else if (isDirectChat(selectedChat) || isGroupChat(selectedChat)) {
+        // For friend chats, check if there's an existing conversation
+        const existingConvo = directConversations.find(
+          c => isDirectChat(c) && c.receiverId === selectedChat._id
+        );
+        if (existingConvo) {
+          payload.conversationId = existingConvo._id;
+        } else {
+          payload.receiverId = selectedChat._id;
+        }
+      } else if (isDirectChat(selectedChat)) {
+        payload.conversationId = selectedChat._id;
+      } else if (isGroupChat(selectedChat)) {
         payload.conversationId = selectedChat._id;
       }
 
+      console.log("Sending message with payload:", payload);
+      console.log("Selected chat:", selectedChat);
+
       const [err, message, conversation] = await sendDirectMessage(payload, socket);
+      console.log("Send message result:", { err, message, conversation });
+      
       if (err) return toast.error(err.message || String(err));
 
       // If server returned a conversation (new convo created), add to store and select it
-      if (conversation) {
-        const receiverId = isFriendChat(selectedChat) ? 
-          selectedChat._id : 
-          (isDirectChat(selectedChat) ? selectedChat.receiverId : selectedChat._id);
-        
-        const receiverName = isFriendChat(selectedChat) ? 
-          selectedChat.userName : 
-          (isDirectChat(selectedChat) ? selectedChat.receiverUserName : "");
-
-        const directConv: IdirectChat = {
+      if (conversation && isFriendChat(selectedChat)) {
+        const directConv: IDirectChat = {
           _id: String(conversation._id),
-          avatar: conversation.avatar || "",
+          avatar: conversation?.avatar || "",
           lastMessage: {
-            content: newMessage,
+            content: trimmedMessage,
             senderId: user._id,
             timestamp: new Date().toISOString(),
           },
@@ -379,15 +410,15 @@ const ChatPage: React.FC = () => {
               _id: String(conversation._id) + "_" + user._id
             },
             {
-              userId: receiverId,
+              userId: selectedChat._id,
               isMuted: false,
               isPinned: false,
               unreadCount: 0,
-              _id: String(conversation._id) + "_" + receiverId
+              _id: String(conversation._id) + "_" + selectedChat._id
             }
           ],
-          receiverId,
-          receiverUserName: receiverName,
+          receiverId: selectedChat._id,
+          receiverUserName: selectedChat.userName,
         };
 
         // Add conversation to store
@@ -401,6 +432,8 @@ const ChatPage: React.FC = () => {
       }
     } catch {
       toast.error("Failed to send message. Please try again.");
+    } finally {
+      setIsSendingMessage(false);
     }
   };
 
@@ -434,6 +467,32 @@ const ChatPage: React.FC = () => {
     if (!contextMenu) return;
     pinConversations(contextMenu.chatId, contextMenu.chatType);
     setContextMenu(null);
+  };
+
+
+  // Remove duplicate socket listener - already handled above
+
+  const handleAddFriend = async () => {
+    try {
+      if (!user) {
+        toast.error("Please log in to send friend requests");
+        return;
+      }
+      
+      const friendData = {
+        firstName: user.firstName,
+        lastName: user.lastName,
+        userName: user.userName,
+        _id: user._id
+      };
+      
+      await sendFriendRequest(friendData, addFriendUsername);
+      toast.success("Friend request sent!");
+      setIsAddFriendOpen(false);
+      setAddFriendUsername("");
+    } catch {
+      toast.error("Failed to send friend request");
+    }
   };
 
   return (
@@ -501,7 +560,12 @@ const ChatPage: React.FC = () => {
           {/* Direct Conversations */}
           <div>
             <h3 className="text-sm font-medium p-2">Chats</h3>
-            {directConversations
+            {isLoadingConversations ? (
+              <div className="p-4">
+                <LoadingSpinner size="sm" text="Loading conversations..." />
+              </div>
+            ) : (
+              directConversations
               .filter(chat => 
                 !searchQuery || 
                 chat.receiverUserName.toLowerCase().includes(searchQuery.toLowerCase())
@@ -517,15 +581,15 @@ const ChatPage: React.FC = () => {
                   onContextMenu={(e) => handleRightClick(e, chat._id, "direct")}
                 >
                   <Avatar>
-                    <AvatarImage src={chat.avatar} />
+                    <AvatarImage src={getChatAvatar(chat)} />
                     <AvatarFallback>
-                      {chat.receiverUserName[0]}
+                      {getChatAvatarFallback(chat)}
                     </AvatarFallback>
                   </Avatar>
                   <div className="flex-1 min-w-0">
                     <div className="flex justify-between items-start">
                       <p className="font-medium truncate">
-                        {chat.receiverUserName}
+                        {getChatDisplayName(chat)}
                       </p>
                       {chat.isPinned && (
                         <Pin className="h-3 w-3 text-muted-foreground" />
@@ -543,7 +607,8 @@ const ChatPage: React.FC = () => {
                     </div>
                   )}
                 </div>
-            ))}
+            ))
+            )}
           </div>
         </div>
       </div>
@@ -556,25 +621,39 @@ const ChatPage: React.FC = () => {
             <div className="p-4 border-b flex items-center justify-between">
               <div className="flex items-center gap-3">
                 <Avatar>
-                  <AvatarImage src={selectedChat.avatar} />
+                  <AvatarImage src={getChatAvatar(selectedChat)} />
                   <AvatarFallback>
-                    {getDisplayInitials(selectedChat)}
+                    {getChatAvatarFallback(selectedChat)}
                   </AvatarFallback>
                 </Avatar>
                 <div>
-                  <h2 className="font-medium">{getDisplayName(selectedChat)}</h2>
+                  <h2 className="font-medium">
+                    {getChatDisplayName(selectedChat)}
+                  </h2>
                 </div>
               </div>
             </div>
 
             {/* Chat Messages */}
             <div className="flex-1 overflow-y-auto p-4 space-y-4">
-              {messages
-                .filter(msg => 
-                  isDirectChat(selectedChat) ? 
-                    msg.conversationId === selectedChat._id :
-                    isFriendChat(selectedChat) && false // No messages for new chats
-                )
+              {isLoadingMessages ? (
+                <div className="flex justify-center items-center h-full">
+                  <LoadingSpinner size="md" text="Loading messages..." />
+                </div>
+              ) : (
+                messages
+                .filter(msg => {
+                  if (isDirectChat(selectedChat)) {
+                    return msg.conversationId === selectedChat._id;
+                  } else if (isFriendChat(selectedChat)) {
+                    // For friend chats, check if there's an existing conversation
+                    const existingConvo = directConversations.find(
+                      c => isDirectChat(c) && c.receiverId === selectedChat._id
+                    );
+                    return existingConvo ? msg.conversationId === existingConvo._id : false;
+                  }
+                  return false;
+                })
                 .map((message) => (
                   <div
                     key={message._id}
@@ -598,7 +677,7 @@ const ChatPage: React.FC = () => {
                       </p>
                     </div>
                   </div>
-                ))}
+                )))}
               
               {/* Show conversation starting message for new chats */}
               {isFriendChat(selectedChat) && messages.length === 0 && (
@@ -606,6 +685,7 @@ const ChatPage: React.FC = () => {
                   {randomConvoStartingMsgRef.current}
                 </div>
               )}
+              )
             </div>
 
             {/* Chat Input */}
@@ -633,9 +713,13 @@ const ChatPage: React.FC = () => {
                   variant="ghost"
                   size="icon"
                   onClick={handleSendMessage}
-                  disabled={!newMessage.trim()}
+                  disabled={!newMessage.trim() || isSendingMessage}
                 >
-                  <Send className="h-5 w-5" />
+                  {isSendingMessage ? (
+                    <LoadingSpinner size="sm" />
+                  ) : (
+                    <Send className="h-5 w-5" />
+                  )}
                 </Button>
               </div>
             </div>
@@ -678,41 +762,25 @@ const ChatPage: React.FC = () => {
 
       {/* Add Friend Dialog */}
       <Dialog open={isAddFriendOpen} onOpenChange={setIsAddFriendOpen}>
+        <DialogTrigger asChild>
+          <Button variant="ghost" size="icon">
+            <UserPlus className="h-5 w-5" />
+          </Button>
+        </DialogTrigger>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Add a new friend</DialogTitle>
+            <DialogTitle>Add Friend</DialogTitle>
           </DialogHeader>
-          <form
-            onSubmit={async (e) => {
-              e.preventDefault();
-              try {
-                if (!user) {
-                  throw new Error("Please login first");
-                }
-                await sendFriendRequest({
-                  _id: user._id,
-                  firstName: user.firstName,
-                  lastName: user.lastName,
-                  userName: user.userName
-                }, friendUsername);
-                toast.success("Friend request sent!");
-                setIsAddFriendOpen(false);
-                setFriendUsername("");
-              } catch {
-                toast.error("Failed to add friend");
-              }
-            }}
-            className="space-y-4"
-          >
+          <div className="flex flex-col gap-4">
             <Input
-              placeholder="Enter username..."
-              value={friendUsername}
-              onChange={(e) => setFriendUsername(e.target.value)}
+              placeholder="Enter username"
+              value={addFriendUsername}
+              onChange={(e) => setAddFriendUsername(e.target.value)}
             />
-            <Button type="submit" disabled={!friendUsername.trim()}>
+            <Button onClick={handleAddFriend}>
               Send Friend Request
             </Button>
-          </form>
+          </div>
         </DialogContent>
       </Dialog>
 
