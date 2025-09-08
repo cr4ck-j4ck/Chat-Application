@@ -23,8 +23,17 @@ export const sendDirectMessage = async (
     if (!socket) return [new Error("No socket"), null, null];
 
     return new Promise((resolve) => {
+        // Set a timeout for the socket emit
+        const timeout = setTimeout(() => {
+            resolve([new Error("Socket timeout - no response from server"), null, null]);
+        }, 10000); // 10 second timeout
+
         socket.emit("send_message", data, (response: SendMessageResponse) => {
+            clearTimeout(timeout);
+            console.log("Socket response received:", response);
+            
             if (!response || !response.ok) {
+                console.log("Socket error response:", response);
                 return resolve([new Error(response?.error || "Unknown error"), null, null]);
             }
             return resolve([null, response.message || null, response.conversation || null]);
