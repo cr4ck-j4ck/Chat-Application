@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import { type IdirectChat, type IgroupChat } from "@/components/Chat/ChatItem";
+import { type IDirectChat, type IGroupChat } from "@/Types/chat.types";
 
 export interface IMessage {
   _id: string;
@@ -14,11 +14,11 @@ interface IconvoStore {
   messages: IMessage[];
   setMessages: (toUpdate: IMessage | IMessage[]) => void;
   appendMessage: (message: IMessage) => void;
-  groupConversations: IgroupChat[];
-  directConversations: IdirectChat[];
-  addGroupConversations: (toUpdate: IgroupChat) => void;
-  addDirectConversations: (toUpdate: IdirectChat | IdirectChat[]) => void;
-  setDirectConversations: (conversations: IdirectChat[]) => void;
+  groupConversations: IGroupChat[];
+  directConversations: IDirectChat[];
+  addGroupConversations: (toUpdate: IGroupChat) => void;
+  addDirectConversations: (toUpdate: IDirectChat | IDirectChat[]) => void;
+  setDirectConversations: (conversations: IDirectChat[] | ((prev: IDirectChat[]) => IDirectChat[])) => void;
   clearDirectConversations: () => void;
   pinConversation: (pinnedConvoId: string, type: "group" | "direct") => void;
   clearMessages: () => void;
@@ -30,9 +30,18 @@ const useCommunicationStore = create<IconvoStore>((set) => ({
     set({ messages: Array.isArray(toUpdate) ? toUpdate : [toUpdate] });
   },
   appendMessage(message) {
-    set(state => ({
-      messages: [...state.messages, message]
-    }));
+    set((state) => {
+      // Check if message already exists to prevent duplicates
+      const messageExists = state.messages.some(
+        (msg) => msg._id === message._id
+      );
+      if (messageExists) {
+        return state;
+      }
+      return {
+        messages: [...state.messages, message],
+      };
+    });
   },
   clearMessages() {
     set({ messages: [] });
@@ -48,13 +57,22 @@ const useCommunicationStore = create<IconvoStore>((set) => ({
     set((state) => {
       const convos = Array.isArray(toUpdate) ? toUpdate : [toUpdate];
       const uniqueConvos = convos.filter(
-        (newConvo) => !state.directConversations.some((existing) => existing._id === newConvo._id)
+        (newConvo) =>
+          !state.directConversations.some(
+            (existing) => existing._id === newConvo._id
+          )
       );
-      return { directConversations: [...state.directConversations, ...uniqueConvos] };
+      return {
+        directConversations: [...state.directConversations, ...uniqueConvos],
+      };
     });
   },
   setDirectConversations(conversations) {
-    set({ directConversations: conversations });
+    if (typeof conversations === 'function') {
+      set((state) => ({ directConversations: conversations(state.directConversations) }));
+    } else {
+      set({ directConversations: conversations });
+    }
   },
   clearDirectConversations() {
     set({ directConversations: [] });
@@ -70,7 +88,7 @@ const useCommunicationStore = create<IconvoStore>((set) => ({
       } else {
         return {
           groupConversations: prevState.groupConversations.map((el) =>
-            el._id === pinnedConvoId ? { ...el, isPinned:!el.isPinned } : el
+            el._id === pinnedConvoId ? { ...el, isPinned: !el.isPinned } : el
           ),
         };
       }
