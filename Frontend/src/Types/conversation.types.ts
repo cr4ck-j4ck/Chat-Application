@@ -29,4 +29,14 @@ export interface IConversation {
   // For group chats
   conversationName?: string;
   avatar?: string;
+  // For direct chats - backend response format
+  receiverId?: string;
+  receiverUserName?: string;
+  receiverFirstName?: string;
+  receiverLastName?: string;
+  receiverAvatar?: string;
+  isOnline?: boolean;
+  isMuted?: boolean;
+  isPinned?: boolean;
+  unreadCount?: number;
 }

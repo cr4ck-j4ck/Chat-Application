@@ -1,6 +1,6 @@
 // @ts-check
 
-import { AvatarFallback, Avatar, AvatarImage } from "@radix-ui/react-avatar";
+import { Avatar, AvatarFallback, AvatarImage } from "../ui/avatar";
 import { Pin, Users, VolumeX } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { type Ifriends } from "@/Store/user.store";
@@ -45,6 +45,19 @@ export interface IdirectChat extends IbaseConvo {
 
 export type ChatUnion = IgroupChat | IdirectChat | (Ifriends & { firstName?: string; lastName?: string });
 
+// Type guards
+const isDirectChat = (chat: ChatUnion): chat is IdirectChat => {
+  return 'type' in chat && chat.type === 'direct' && 'receiverId' in chat;
+};
+
+const isGroupChat = (chat: ChatUnion): chat is IgroupChat => {
+  return 'type' in chat && chat.type === 'group' && 'conversationName' in chat;
+};
+
+const isFriendChat = (chat: ChatUnion): chat is Ifriends => {
+  return 'firstName' in chat && 'userName' in chat;
+};
+
 interface ChatItemProps {
   chat: ChatUnion;
   isSelected: boolean;
@@ -80,6 +93,19 @@ export default function ChatItem({ chat, isSelected, onClick, onRightClick }: Ch
     return '';
   };
 
+  const getAvatarFallback = (chat: ChatUnion) => {
+    if (isDirectChat(chat)) {
+      return chat.receiverUserName?.[0] || 'U';
+    }
+    if (isGroupChat(chat)) {
+      return chat.conversationName?.[0] || 'G';
+    }
+    if (isFriendChat(chat)) {
+      return `${chat.firstName?.[0] || ''}${chat.lastName?.[0] || ''}` || chat.userName?.[0] || 'U';
+    }
+    return '??';
+  };
+
   return (
     <div
       className={`p-3 rounded-lg cursor-pointer transition-all duration-200 hover:bg-sidebar-accent/10 ${
@@ -92,7 +118,7 @@ export default function ChatItem({ chat, isSelected, onClick, onRightClick }: Ch
         <div className="relative h-12 w-12 rounded-full flex justify-center items-center bg-[#ececec]">
           <Avatar>
             <AvatarImage src={'avatar' in chat && chat.avatar ? chat.avatar : "/placeholder.svg"} />
-            <AvatarFallback>{getDisplayName()}</AvatarFallback>
+            <AvatarFallback>{getAvatarFallback(chat)}</AvatarFallback>
           </Avatar>
           {'isOnline' in chat && chat.isOnline && (
             <div className="absolute -bottom-1 -right-1 w-4 h-4 bg-green-500 border-2 border-sidebar rounded-full"></div>
