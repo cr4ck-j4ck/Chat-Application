@@ -7,7 +7,7 @@ export interface IMessage {
   senderId: string; // Reference to User who sent it
   content: string; // The message text (or JSON for richer types)
   type: "text" | "image" | "file" | "system"; // For extensibility (e.g., future media support)
-  timestamp: string; // Timestamp for sorting and display
+  createdAt: string; // Timestamp for sorting and display
 }
 
 interface IconvoStore {
@@ -27,7 +27,24 @@ interface IconvoStore {
 const useCommunicationStore = create<IconvoStore>((set) => ({
   messages: [],
   setMessages(toUpdate) {
-    set({ messages: Array.isArray(toUpdate) ? toUpdate : [toUpdate] });
+    set((state) => {
+      if (Array.isArray(toUpdate)) {
+        // When setting multiple messages, replace all messages
+        return { messages: toUpdate };
+      } else {
+        // When setting a single message, check if it exists and update or add
+        const existingIndex = state.messages.findIndex(msg => msg._id === toUpdate._id);
+        if (existingIndex !== -1) {
+          // Update existing message
+          const updatedMessages = [...state.messages];
+          updatedMessages[existingIndex] = toUpdate;
+          return { messages: updatedMessages };
+        } else {
+          // Add new message
+          return { messages: [...state.messages, toUpdate] };
+        }
+      }
+    });
   },
   appendMessage(message) {
     set((state) => {

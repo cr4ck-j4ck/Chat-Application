@@ -4,7 +4,7 @@ import type {
   IfriendRequests,
   Ifriends,
 } from "@/Store/user.store";
-import type { IMessage } from "@/Store/communcation.store";
+import type { IMessage } from "@/Store/communication.store";
 const BackendURL = import.meta.env.VITE_BACKEND_URL;
 interface IuserData {
   firstName: string;
@@ -14,7 +14,6 @@ interface IuserData {
 }
 
 export async function createUser(userData: IuserData) {
-  console.log("passed Content is ", userData);
   const res = await axios.post(
     `${BackendURL}/user/signup`,
     {
