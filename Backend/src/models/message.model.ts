@@ -13,7 +13,7 @@ const messageSchema = new Schema<IMessage>(
   {
     conversationId: {
       type: Schema.Types.ObjectId,
-      ref: "Chat", // Matches your Chat model name
+      ref: "Conversation", // Matches your Conversation model name
       required: true,
       index: true, // For fast queries by conversation
     },

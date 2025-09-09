@@ -6,141 +6,86 @@ import { Server } from "socket.io";
 import { IpopulatedUser } from "../Types/interface.";
 
 export async function createUser(req: Request, res: Response) {
-  try {
-    if (!req.body?.userData?.email) {
-      return res.status(400).json({ message: "Please provide user data correctly" });
-    }
-
-    const { email, password, firstName, lastName, userName } = req.body.userData;
-
-    // Validate required fields
-    if (!email || !password || !firstName || !userName) {
-      return res.status(400).json({ 
-        message: "Email, password, firstName, and userName are required" 
-      });
-    }
-
-    // Validate email format
-    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    if (!emailRegex.test(email)) {
-      return res.status(400).json({ message: "Invalid email format" });
-    }
-
-    // Validate password strength
-    if (password.length < 6) {
-      return res.status(400).json({ message: "Password must be at least 6 characters long" });
-    }
-
-    // Check if user already exists
-    const existingUser = await User.findOne({ 
-      $or: [{ email: email }, { userName: userName }] 
-    });
-    
+  if (req.body && req.body.userData.email) {
+    const { email, password, firstName, lastName, userName } =
+      req.body.userData;
+    const existingUser = await User.findOne({ email: email });
     if (existingUser) {
-      return res.status(400).json({ 
-        message: existingUser.email === email ? 
-          "User with this email already exists" : 
-          "Username is already taken" 
-      });
+      return res.status(400).send("User Already Exists!!.. You have to login");
     }
-
-    // Hash password and create user
     const hashedPassword = await bcrypt.hash(password, 12);
-    const newUser = await User.create({
-      email,
-      password: hashedPassword,
-      firstName,
-      lastName,
-      userName,
-    });
-
-    // Remove password from response
-    const { password: pwd, ...filteredUser } = newUser.toObject();
-    res.status(201).json(filteredUser);
-  } catch (error) {
-    console.error("Error creating user:", error);
-    res.status(500).json({ message: "Internal server error" });
+    const newUser = (
+      await User.create({
+        email,
+        password: hashedPassword,
+        firstName,
+        lastName,
+        userName,
+      })
+    ).toObject();
+    const { password: pwd, ...filteredUser } = newUser;
+    res.json(filteredUser);
+    // const newUser = await User.create({
+    //   email,
+    // })
+  } else {
+    res.status(200).send("Please provide Data Correctly!!");
   }
 }
 
 export async function loginUser(req: Request, res: Response) {
-  try {
-    const { email, password: Pass } = req.body.userData;
-    
-    if (!req.body?.userData || !email || !Pass) {
-      return res
-        .status(400)
-        .json({ message: "Please provide email and password" });
-    }
-
-    // Validate email format
-    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    if (!emailRegex.test(email)) {
-      return res.status(400).json({ message: "Invalid email format" });
-    }
-
-    const existingUser = await User.findOne({ email: email })
-      .populate<{ friends: IpopulatedUser }>({
-        path: "friends",
-        select: "firstName lastName userName avatar status",
-      })
-      .populate<{ friendsRequests: IpopulatedUser[] }>({
-        path: "friendsRequests",
-        select: "firstName lastName userName avatar",
-      })
-      .lean();
-
-    if (!existingUser) {
-      return res.status(401).json({ message: "Invalid email or password" });
-    }
-
-    if (!existingUser.password) {
-      return res
-        .status(400)
-        .json({ message: "Account was created with social login. Please use the appropriate login method." });
-    }
-
-    const comparisonResult = await bcrypt.compare(Pass, existingUser.password);
-    if (!comparisonResult) {
-      return res.status(401).json({ message: "Invalid email or password" });
-    }
-
-    // Update user status to online
-    await User.findByIdAndUpdate(existingUser._id, { 
-      status: "online",
-      lastSeen: new Date()
-    });
-
-    const token = jwt.sign(
-      { userId: existingUser._id, userName: existingUser.userName },
-      process.env.JWT_SECRET!,
-      { expiresIn: "6d" }
-    );
-    const refreshToken = jwt.sign(
-      { userId: existingUser._id },
-      process.env.JWT_SECRET!,
-      { expiresIn: "15d" }
-    );
-
-    res.cookie("token", token, {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === "production",
-      sameSite: process.env.NODE_ENV === "production" ? "none" : "lax",
-      maxAge: 6 * 24 * 60 * 60 * 1000, // 6 days
-    });
-    res.cookie("refreshToken", refreshToken, {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === "production",
-      sameSite: process.env.NODE_ENV === "production" ? "none" : "lax",
-      maxAge: 15 * 24 * 60 * 60 * 1000, // 15 days
-    });
-
-    const { password, ...responseUserObject } = existingUser;
-    res.json(responseUserObject);
-  } catch (error) {
-    console.error("Error during login:", error);
-    res.status(500).json({ message: "Internal server error" });
+  const { email, password: Pass } = req.body.userData;
+  if (!req.body && !email && !Pass) {
+    return res
+      .status(400)
+      .send("Please provide Sufficient Data to start your query!");
   }
+  const existingUser = await User.findOne({ email: email })
+    .populate<{ friends: IpopulatedUser }>({
+      path: "friends",
+      select: "firstName lastName userName avatar",
+    })
+    .populate<{ friendsRequests: IpopulatedUser[] }>({
+      path: "friendsRequests",
+      select: "firstName lastName userName avatar",
+    })
+    .lean();
+  if (!existingUser) {
+    return res.status(400).send("User Not Exists with this Email !!");
+  }
+  if (!existingUser.password) {
+    return res
+      .status(400)
+      .send("It seems like you've not created any password!!");
+  }
+  const comparisonResult = await bcrypt.compare(Pass, existingUser.password);
+  if (!comparisonResult) {
+    return res.status(401).send("Wrong password!");
+  }
+  const token = jwt.sign(
+    { userId: existingUser._id, userName: existingUser.userName },
+    process.env.JWT_SECRET!,
+    { expiresIn: "6d" }
+  );
+  const refreshToken = jwt.sign(
+    { userId: existingUser._id },
+    process.env.JWT_SECRET!,
+    { expiresIn: "15d" }
+  );
+  res.cookie("token", token, {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === "PROD",
+    sameSite: process.env.NODE_ENV === "PROD" ? "none" : "lax",
+    maxAge: 1000 * 60 * 60,
+  });
+  res.cookie("refreshToken", refreshToken, {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === "PROD",
+    sameSite: process.env.NODE_ENV === "PROD" ? "none" : "lax",
+    maxAge: 1000 * 60 * 60,
+  });
+  const { password, ...responseUserObject } = existingUser;
+  res.send(responseUserObject);
 }
 
 export async function verifyUser(
@@ -305,49 +250,34 @@ export async function rejectFriendRequest(req: Request, res: Response) {
 }
 
 export async function removeFriend(req: Request, res: Response) {
-  try {
-    const { friendId } = req.query;
-    if (!friendId) {
-      return res
-        .status(400)
-        .json({ message: "Please provide the friend ID you want to remove" });
-    }
-
-    // Validate friendId format
-    if (typeof friendId !== 'string' || friendId.length !== 24) {
-      return res
-        .status(400)
-        .json({ message: "Invalid friend ID format" });
-    }
-
-    // Check if the friend exists and is actually a friend
-    const currentUser = await User.findById(req.user.userId);
-    if (!currentUser) {
-      return res.status(404).json({ message: "User not found" });
-    }
-
-    if (!currentUser.friends.includes(friendId as any)) {
-      return res.status(400).json({ message: "This user is not in your friends list" });
-    }
-
-    // Remove friend from both users' friend lists
-    await User.findByIdAndUpdate(
-      req.user.userId,
-      { $pull: { friends: friendId } },
-      { new: true }
-    );
-    
-    await User.findByIdAndUpdate(
-      friendId,
-      { $pull: { friends: req.user.userId } },
-      { new: true }
-    );
-
-    res.json({ message: "Friend removed successfully" });
-  } catch (error) {
-    console.error("Error removing friend:", error);
-    res.status(500).json({ message: "Internal server error" });
+  const { friendId } = req.query;
+  if (!friendId) {
+    return res
+      .status(403)
+      .send("Please Provide the Friend ID you want to remove");
   }
+  if (friendId === "68b2a8632732e69be77a9795") {
+    return res
+      .status(403)
+      .send(
+        "You cannot remove Him. because He is the Owner of The Gufta-Gu."
+      );
+  }
+  await User.findByIdAndUpdate(
+    req.user.userId,
+    {
+      $pull: { friends: friendId },
+    },
+    { new: true }
+  );
+  await User.findByIdAndUpdate(
+    friendId,
+    {
+      $pull: { friends: req.user.userId },
+    },
+    { new: true }
+  );
+  res.send("Friend Removed SuccessFully!!");
 }
 
 // Search users by name or username (exclude self)
@@ -381,22 +311,19 @@ export async function getUserConversations(req: Request, res: Response) {
     .sort({ updatedAt: -1 })
     .lean();
 
-    const formattedConversations = conversations.map((conv) => {
+    const formattedConversations = await Promise.all(conversations.map(async (conv) => {
       // For direct chats, we need to format them for the frontend
       if (conv.type === "direct") {
         // Find the other participant (not the current user)
-        const otherParticipant = conv.participants.find(p => {
-          const participantId = p.userId._id ? p.userId._id.toString() : p.userId.toString();
-          return participantId !== userId;
-        });
-        
+        const otherParticipant = conv.participants.find(p => 
+          p.userId && p.userId._id && p.userId._id.toString() !== userId
+        );
         if (!otherParticipant?.userId) return null;
 
         // Get current user's participant info for this conversation
-        const currentUserParticipant = conv.participants.find(p => {
-          const participantId = p.userId._id ? p.userId._id.toString() : p.userId.toString();
-          return participantId === userId;
-        });
+        const currentUserParticipant = conv.participants.find(p => 
+          p.userId && p.userId._id && p.userId._id.toString() === userId
+        );
 
         const receiver = otherParticipant.userId;
         
@@ -405,7 +332,7 @@ export async function getUserConversations(req: Request, res: Response) {
           type: "direct" as const,
           participants: conv.participants.map(p => ({
             ...p,
-            userId: p.userId._id ? p.userId._id.toString() : p.userId.toString()
+            userId: p.userId._id.toString()
           })),
           lastMessage: conv.lastMessage ? {
             content: conv.lastMessage.content,
@@ -414,8 +341,6 @@ export async function getUserConversations(req: Request, res: Response) {
           } : undefined,
           createdAt: conv.createdAt,
           updatedAt: conv.updatedAt,
-          receiverFirstName: receiver.firstName,
-          receiverLastName: receiver.lastName,
           receiverUserName: receiver.userName,
           receiverId: receiver._id.toString(),
           avatar: receiver.avatar,
@@ -432,14 +357,14 @@ export async function getUserConversations(req: Request, res: Response) {
         _id: conv._id.toString(),
         participants: conv.participants.map(p => ({
           ...p,
-          userId: p.userId._id ? p.userId._id.toString() : p.userId.toString()
+          userId: p.userId._id.toString()
         })),
         lastMessage: conv.lastMessage ? {
           ...conv.lastMessage,
           senderId: conv.lastMessage.senderId.toString()
         } : undefined
       };
-    });
+    }));
 
     // Remove nulls and sort by pinned and date
     const validConversations = formattedConversations

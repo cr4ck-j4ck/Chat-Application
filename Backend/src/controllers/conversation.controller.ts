@@ -10,36 +10,32 @@ export async function getUserConversations(req: Request, res: Response) {
         const conversations = await Conversation.find({ 
             "participants.userId": userId 
         })
-        .sort({ updatedAt: -1 })  // Sort by latest first
+        .sort({ updatedAt: -1 })
         .populate('participants.userId', 'firstName lastName userName avatar status')
         .lean();
 
-        const formattedConversations = await Promise.all(conversations.map(async (conv) => {
+        const formattedConversations = conversations.map((conv) => {
             const otherParticipant = conv.participants.find(p => p.userId.toString() !== userId);
-            if (!otherParticipant) {
-                return null;
-            }
+            if (!otherParticipant) return null;
             
-            // For direct chats, get the receiver's details
             if (conv.type === "direct") {
-                const receiver = await User.findById(otherParticipant.userId)
-                    .select('firstName lastName userName avatar status')
-                    .lean();
-                
-                if (!receiver) {
-                    return null;
-                }
-
-                // Find the current user's participant object
+                // The participant.userId is already populated with user data
+                const receiver = otherParticipant.userId;
                 const userParticipant = conv.participants.find(p => p.userId.toString() === userId);
                 
                 return {
-                    _id: conv._id,
+                    conversationName: `${receiver.firstName} ${receiver.lastName}`.trim() || receiver.userName,
+                    _id: conv._id.toString(),
                     type: conv.type as "direct",
-                    participants: conv.participants,
+                    participants: conv.participants.map(p => ({
+                        ...p,
+                        userId: p.userId._id ? p.userId._id.toString() : p.userId.toString()
+                    })),
                     lastMessage: conv.lastMessage,
                     createdAt: conv.createdAt,
                     updatedAt: conv.updatedAt,
+                    receiverFirstName: receiver.firstName,
+                    receiverLastName: receiver.lastName,
                     receiverUserName: receiver.userName,
                     receiverId: receiver._id.toString(),
                     avatar: receiver.avatar,
@@ -55,10 +51,10 @@ export async function getUserConversations(req: Request, res: Response) {
                 _id: conv._id.toString(),
                 participants: conv.participants.map(p => ({
                     ...p,
-                    userId: p.userId.toString()
+                    userId: p.userId._id ? p.userId._id.toString() : p.userId.toString()
                 }))
             };
-        }));
+        });
 
         // Filter out any null values and sort by isPinned and then by updatedAt
         const validConversations = formattedConversations
