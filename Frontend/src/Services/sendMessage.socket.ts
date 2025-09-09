@@ -1,4 +1,4 @@
-import { type IMessage } from "@/Store/communcation.store";
+import { type IMessage } from "@/Store/communication.store";
 import type { Socket } from "socket.io-client";
 import type { IdirectChat } from "@/components/Chat/ChatItem";
 
@@ -30,7 +30,6 @@ export const sendDirectMessage = async (
 
         socket.emit("send_message", data, (response: SendMessageResponse) => {
             clearTimeout(timeout);
-            console.log("Socket response received:", response);
             
             if (!response || !response.ok) {
                 console.log("Socket error response:", response);
