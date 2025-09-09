@@ -1,28 +1,19 @@
-import { AuthProvider, IUser } from "../models/user.model";
-import mongoose, { mongo } from "mongoose";
+import { AuthProvider } from "../models/user.model";
+import mongoose, { Types } from "mongoose";
 
-interface IChat {
-  type: "direct" | "group";
-  participants: Types.ObjectId[]; // User references
-  lastMessage: {
-    content: string,
-    senderId: string,
-  },
-  createdAt: Date;
-}
-
+// Consolidated User interface
 export interface IUser {
   firstName: string;
   lastName: string;
   email: string;
-  bio:string;
+  bio: string;
   avatar?: string;
   provider: AuthProvider;
-  password?: string; // optional for social login
+  password?: string;
   status: "online" | "offline" | "away";
   lastSeen: Date;
-  friends: mongoose.Types.ObjectId[]; // References to other users
-  friendsRequests: mongoose.Types.ObjectId[]; // References to other users
+  friends: mongoose.Types.ObjectId[];
+  friendsRequests: mongoose.Types.ObjectId[];
   blockedUsers: mongoose.Types.ObjectId[];
   socketId?: string;
   chats: mongoose.Types.ObjectId[];
@@ -31,23 +22,45 @@ export interface IUser {
   updatedAt: Date;
 }
 
-export interface IpopulatedUser extends IUser{
-  friends:IUser[];
-  friendsRequests:IUser[];
-  blockedUsers:IUser[];
-  Chats:Chat[];
+export interface IpopulatedUser extends IUser {
+  friends: IUser[];
+  friendsRequests: IUser[];
+  blockedUsers: IUser[];
+  chats: mongoose.Types.ObjectId[];
 }
 
-export interface IsentMessage{
-  userName:string;
-  participants:{
-    userId:string
-  }[] ,
-  conversationId: Types.ObjectId; // Reference to the Chat/Conversation
-  senderId: Types.ObjectId; // Reference to User who sent it
-  receiverId:Types.ObjectId;
-  content: string; // The message text (or JSON for richer types)
-  type: "text" | "image" | "file" | "system"; // For extensibility (e.g., future media support)
-  readBy: Types.ObjectId[]; // Array of users who have read this message
-  createdAt: Date; // Timestamp for sorting and display
+// Fixed message interface with proper types
+export interface IsentMessage {
+  conversationId?: Types.ObjectId;
+  senderId: Types.ObjectId;
+  receiverId?: Types.ObjectId;
+  content: string;
+  type?: "text" | "image" | "file" | "system";
+}
+
+// Conversation interface
+export interface IConversation {
+  type: "direct" | "group";
+  participants: {
+    userId: Types.ObjectId;
+    isMuted?: boolean;
+    isPinned?: boolean;
+    unreadCount?: number;
+  }[];
+  conversationName?: string;
+  avatar?: string;
+  lastMessage?: {
+    content: string;
+    senderId: Types.ObjectId;
+  };
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+// Friend request interface
+export interface IFriendRequest {
+  senderId: Types.ObjectId;
+  receiverId: Types.ObjectId;
+  status: "pending" | "accepted" | "rejected";
+  createdAt: Date;
 }

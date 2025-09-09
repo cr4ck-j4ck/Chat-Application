@@ -31,5 +31,6 @@ router.get("/friendList", verifyUser, wrapAsyncRouteHandler(friendsData));
 router
   .route("/acceptFriendRequest")
   .post(verifyUser, wrapAsyncRouteHandler(acceptFriendRequest));
+router.delete("/friends", verifyUser, wrapAsyncRouteHandler(removeFriend));
+
 export default router;
-router.delete("/friends",verifyUser,wrapAsyncRouteHandler(removeFriend))

@@ -103,7 +103,7 @@ const UserSchema = new Schema<IUser>(
     chats: [
       {
         type: Schema.Types.ObjectId,
-        ref: "Chat",
+        ref: "Conversation",
       },
     ],
     socketId: {
