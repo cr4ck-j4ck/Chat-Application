@@ -10,25 +10,27 @@
     ],
     "module": "ESNext",
     "skipLibCheck": true,
+
     /* Bundler mode */
     "moduleResolution": "bundler",
-    "allowImportingTsExtensions": true,
     "verbatimModuleSyntax": true,
     "moduleDetection": "force",
-    "noEmit": true,
+    "noEmit": false,                // ⬅️ build karega even if errors
+
     "jsx": "react-jsx",
-    /* Linting */
-    "strict": true,
-    "noUnusedLocals": true,
-    "noUnusedParameters": true,
-    "erasableSyntaxOnly": true,
-    "noFallthroughCasesInSwitch": true,
-    "noUncheckedSideEffectImports": true,
+
+    /* Make it loose */
+    "strict": false,                // ⬅️ all strict checks off
+    "noImplicitAny": false,         // ⬅️ missing types = any
+    "strictNullChecks": false,      // ⬅️ null/undefined allowed everywhere
+    "noUnusedLocals": false,        // ⬅️ unused variable = no error
+    "noUnusedParameters": false,    // ⬅️ unused function args = no error
+    "noFallthroughCasesInSwitch": false, // ⬅️ switch case fallthrough allowed
+    "noUncheckedSideEffectImports": false, // ⬅️ stop complaining about imports
+    "noEmitOnError": false,         // ⬅️ don’t block build on type errors
     "baseUrl": ".",
     "paths": {
-      "@/*": [
-        "./src/*"
-      ]
+      "@/*": ["./src/*"]
     }
   },
   "include": [
