@@ -8,23 +8,20 @@ const PrivateRoutes = ({
 }: {
   children: React.ReactNode;
 }): React.JSX.Element => {
-  const { fetchResult, setFetchResult } = useGlobalStore(
+  const { fetchResult } = useGlobalStore(
     useShallow((state) => ({
-      fetchResult: state.fetchResult,
-      setFetchResult: state.setFetchResult,
+      fetchResult: state.fetchResult
     }))
   );
   const user = useUserStore((state) => state.user);
-  useEffect(() => {
-    setFetchResult("resting")
-  }, [user]);
 
-  if (user && fetchResult === "success") {
+  // Don't interfere with fetchResult - let App.tsx handle it
+  if (user && (fetchResult === "success" || fetchResult === "resting")) {
     return <>{children}</>;
   } else if (fetchResult === "error") {
     console.log("Error occurred, redirecting to auth");
     return <Navigate to={"/auth"} />;
-  } else if (fetchResult === "success" && !user) {
+  } else if ((fetchResult === "success" || fetchResult === "resting") && !user) {
     // User is not authenticated, redirect to login
     console.log("User not authenticated, redirecting to auth");
     return <Navigate to={"/auth"} />;
