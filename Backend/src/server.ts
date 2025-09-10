@@ -92,10 +92,7 @@ const server = app.listen(Port, () => {
 // Socket.IO setup
 const io = new Server(server, {
   cors: {
-    origin:
-      process.env.NODE_ENV === "production"
-        ? ["https://gufta-gu.vercel.app"]
-        : ["http://localhost:5173"],
+    origin:["https://gufta-gu.vercel.app","http://localhost:5173"],
     credentials: true,
   },
   pingTimeout: 60000,
