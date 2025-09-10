@@ -129,13 +129,13 @@ io.on("connection", (socket) => {
 
         // emit new conversation event to both participants if it was created now
         if (!existingConv) {
-          io.to(data.receiverId).emit("new_conversation", convo);
-          io.to(data.senderId).emit("new_conversation", convo);
+          io.to(data.receiverId.toString()).emit("new_conversation", convo);
+          io.to(data.senderId.toString()).emit("new_conversation", convo);
         }
 
         // emit message to both users
-        io.to(data.receiverId).emit("receive_message", { ...newMessage.toObject(), conversationId: convoId });
-        io.to(data.senderId).emit("receive_message", { ...newMessage.toObject(), conversationId: convoId });
+        io.to(data.receiverId.toString()).emit("receive_message", { ...newMessage.toObject(), conversationId: convoId });
+        io.to(data.senderId.toString()).emit("receive_message", { ...newMessage.toObject(), conversationId: convoId });
 
         return callback?.({ ok: true, conversation: convo, message: newMessage });
       }
@@ -157,7 +157,7 @@ io.on("connection", (socket) => {
         // emit to room (conversationId) and also to sender/participants
         io.to(String(data.conversationId)).emit("receive_message", newMessage);
         // Also emit to sender's personal room to ensure their client gets it
-        io.to(data.senderId).emit("receive_message", newMessage);
+        io.to(data.senderId.toString()).emit("receive_message", newMessage);
 
         return callback?.({ ok: true, message: newMessage });
       }

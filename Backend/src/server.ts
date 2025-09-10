@@ -235,8 +235,8 @@ io.on("connection", (socket) => {
             conversationId = conversation._id.toString();
 
             // Emit new conversation to both participants
-            io.to(data.receiverId).emit("new_conversation", conversation);
-            io.to(data.senderId).emit("new_conversation", conversation);
+           io.to(data.receiverId.toString()).emit("new_conversation", conversation);
+io.to(data.senderId.toString()).emit("new_conversation", conversation);
           }
         } else if (data.conversationId) {
           // Handle existing conversation
